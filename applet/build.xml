@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="PV204Applet" basedir="." default="all">
+  <property name="gp.home" value="../../../sem04/SimpleApplet/ext/globalplatform-2_1_1" />
+  <property name="jc.home" value="../../../sem04/SimpleApplet/ext/java_card_kit-3_0_3" />
+
+  <property name="build.outputfile" value="PV204Applet.cap" />
+  <property name="build.outputdir" value="build/bin" />
+  <property name="build.sourcedir" value="src" />
+  <property name="build.version" value="1.0" />
+
+  <property name="docs.classpath" value="${gp.home}/gp211.jar;${jc.home}/lib/api_classic.jar" />
+  <property name="docs.outputdir" value="build/docs" />
+
+  <taskdef name="javacard"
+    classname="pro.javacard.ant.JavaCard"
+    classpath="../../../sem04/SimpleApplet/ext/ant-javacard.jar"
+  />
+
+  <target name="clean">
+    <delete dir="${build.outputdir}" />
+    <delete dir="${docs.outputdir}" />
+  </target>
+
+  <target name="compile" depends="clean" description="Build the CAP file of our PV204 applet">
+    <mkdir dir="${build.outputdir}" />
+    <javacard jckit="${jc.home}">
+      <cap aid="EB2C231CFD"
+        output="${build.outputdir}/${build.outputfile}"
+        sources="${build.sourcedir}"
+        version="${build.version}"
+      >
+        <applet aid="EB2C231CFD221E00" class="applets.PV204Applet" />
+      </cap>
+    </javacard>
+  </target>
+
+  <target name="docs" depends="compile">
+    <mkdir dir="${docs.outputdir}" />
+    <javadoc packagenames="src"
+      sourcepath="${build.sourcedir}"
+      destdir="${docs.outputdir}"
+      classpath="${docs.classpath}"
+      linksource="yes"
+    >
+      <fileset dir="${build.sourcedir}">
+        <include name="**" />
+      </fileset>
+    </javadoc>
+  </target>
+
+  <target name="all" depends="clean,compile,docs" />
+</project>
