@@ -4,7 +4,6 @@ import applets.SimpleApplet;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Arrays;
-import javacard.framework.Util;
 import javacard.security.AESKey;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
@@ -14,7 +13,6 @@ import javacard.security.KeyPair;
 import javacard.security.MessageDigest;
 import javacardx.crypto.Cipher;
 import java.math.BigInteger; 
-import java.util.Random;
 
 public class SimpleAPDU 
 {
@@ -28,6 +26,8 @@ public class SimpleAPDU
     static byte[] baTempS = new byte[17];
     static byte[] baTempSS = new byte[17];
     static byte[] baTempSS1 = new byte[17];
+    static byte[] g = new byte[17];
+    static byte[] trace1 = new byte[17];
     static short lenA, lenB, lenP, lenW, lenS, lenSS;
     static KeyPair kpV;
     static ECPrivateKey privKeyV;
@@ -63,13 +63,7 @@ public class SimpleAPDU
         pin= br.readLine();
         System.out.print("PIN (PC): " + pin);
         System.out.println();
-            
-        /*if(pin.compareTo("1234") != 0)
-        {
-            System.out.println("Invalid PIN");
-            System.exit(0);
-        }*/
-        
+       
         if(pin.length() != 4 || !pin.matches("[0-9]+"))
         {
             System.out.println("Invalid PIN");
@@ -113,92 +107,64 @@ public class SimpleAPDU
         for (byte b: baTempS) System.out.print(String.format("%02X", b));
         System.out.println();
             
-        byte pu[] = new byte[CardMngr.HEADER_LENGTH];
+        byte pu[] = new byte[CardMngr.HEADER_LENGTH + lenB];
         pu[CardMngr.OFFSET_CLA] = (byte) 0x00;
         pu[CardMngr.OFFSET_INS] = (byte) 0xD1;
         pu[CardMngr.OFFSET_P1] = (byte) 0x00;
         pu[CardMngr.OFFSET_P2] = (byte) 0x00;
         pu[CardMngr.OFFSET_LC] = (byte) 0x00;
+        System.arraycopy(baTempB, 0, pu, 5, lenB);
         byte[] pus = cardManager.sendAPDUSimulator(pu);
-        baPubKeyU = Arrays.copyOfRange(pus, 0, 33);
+        baPubKeyU = Arrays.copyOfRange(pus, 0, 17);
         System.out.println();
-        System.out.print("Public Key Received from Card (U) " + baPubKeyU.length + " :");
+        System.out.print("A Parameter Received from Card (U) " + baPubKeyU.length + " :");
         for (byte b: baPubKeyU) System.out.print(String.format("%02X", b));
         System.out.println();
-            
+        
+        //if(Arrays.equals(baTempSS, baTempSS1) == true)
+        //start();        
+        //G = Hash(PIN) mod P ---- DONE
+        //U = (G ^ A) mod P
+        //V = (G ^ B) mod P
+        //Hash(PIN) = hashBuffer
+        
+        BigInteger p = btbi(baTempP);
+        
+        BigInteger g1 = btbi(hashBuffer).mod(p);
+        g = bitb(g1, 16);
+        
+        System.out.print("G (V): ");
+        for (byte b: g) System.out.print(String.format("%02X", b));
+        System.out.println();
+        
+        BigInteger a = btbi(baPubKeyU);
+        //System.out.println(a.intValue());
+        BigInteger midv = btbi(g).pow(a.intValue()).mod(p);
+        byte[] midV = bitb(midv, 16);
+        
+        BigInteger bb = btbi(baTempB);
+        BigInteger k1 = btbi(midV).pow(bb.intValue()).mod(p);
+        byte[] k = bitb(k1, 16);
+        
+        System.out.print("Shared Secret At PC (V) " + k.length + " :");
+        for (byte b: k) System.out.print(String.format("%02X", b));
+        
+                    
         byte ss[] = new byte[CardMngr.HEADER_LENGTH + lenW];
         ss[CardMngr.OFFSET_CLA] = (byte) 0x00;
         ss[CardMngr.OFFSET_INS] = (byte) 0xD2;
         ss[CardMngr.OFFSET_P1] = (byte) 0x00;
         ss[CardMngr.OFFSET_P2] = (byte) 0x00;
         ss[CardMngr.OFFSET_LC] = (byte) 0x00;
-        System.arraycopy(baTempW, 0, ss, 5, lenW);
+        System.arraycopy(baTempB, 0, ss, 5, lenB);
         byte[] sss = cardManager.sendAPDUSimulator(ss);
-        baTempSS1 = Arrays.copyOfRange(sss, 0, 17);
+        baTempSS1 = Arrays.copyOfRange(sss, 0, 16);
         System.out.println();
-        System.out.print("Shared Secret Received from Card (U) " + baTempSS1.length + " :");
+        System.out.print("G from Card (U) :");
         for (byte b: baTempSS1) System.out.print(String.format("%02X", b));
         System.out.println();
-            
-        Util.arrayCopyNonAtomic(baTempS, (short) 0, baPrivKeyV, (short) 0, (short) lenS);
         
-        ecdhV = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, true);
-        ecdhV.init(privKeyV);
-        lenSS = ecdhV.generateSecret(baPubKeyU, (short)0, lenW, baTempSS, (short) 0);
-        System.out.println();
-        System.out.print("Shared Secred U and V (V) " + lenSS + " :");
-        for (byte b: baTempSS) System.out.print(String.format("%02X", b));
-        System.out.println();
-            
-        System.out.println("Shared Secret Equality: " + Arrays.equals(baTempSS, baTempSS1));
-        System.out.println();
-        
-        byte ss1[] = new byte[CardMngr.HEADER_LENGTH];
-        ss1[CardMngr.OFFSET_CLA] = (byte) 0x00;
-        ss1[CardMngr.OFFSET_INS] = (byte) 0xD3;
-        ss1[CardMngr.OFFSET_P1] = (byte) 0x00;
-        ss1[CardMngr.OFFSET_P2] = (byte) 0x00;
-        ss1[CardMngr.OFFSET_LC] = (byte) 0x00;
-        byte[] sss1 = cardManager.sendAPDUSimulator(ss1);
-        
-        byte ss2[] = new byte[CardMngr.HEADER_LENGTH];
-        ss2[CardMngr.OFFSET_CLA] = (byte) 0x00;
-        ss2[CardMngr.OFFSET_INS] = (byte) 0xD4;
-        ss2[CardMngr.OFFSET_P1] = (byte) 0x00;
-        ss2[CardMngr.OFFSET_P2] = (byte) 0x00;
-        ss2[CardMngr.OFFSET_LC] = (byte) 0x00;
-        byte[] sss2 = cardManager.sendAPDUSimulator(ss2);
-        
-        //if(Arrays.equals(baTempSS, baTempSS1) == true)
-        //start();        
-        //G = Hash(PIN) mod P ---- DONE
-        //U = (G ^ A) mod     ---- DONE
-        //V = (G ^ B) mod P   ---- DONE
-        //Hash(PIN) = hashBuffer
-        
-        BigInteger p = new BigInteger(baTempP);
-        BigInteger G_number = OS2IP(hashBuffer).mod(p);
-        byte G_byte[] = I2OSP(G_number, 16);
-        System.out.print("Calculated G (V): ");
-        for(byte b:G_byte) System.out.print(String.format("%X",b));
-        System.out.println();
-        
-        Random rand = new Random();
-	int  A = rand.nextInt(100) + 100;
-        BigInteger G_a = G_number.pow(A).mod(p);
-        // send G_a to card
-        
-        // recieve G_b from card
-        //G_b =
-        // test correct range
-        BigInteger LowRange = new BigInteger("2");
-        BigInteger HighRange = new BigInteger(""+p.subtract(LowRange));
-        if (G_b.compareTo(LowRange) < 0 || G_b.compareTo(HighRange) > 0)
-        {
-            System.out.println("G_b not in correct range");
-            System.exit(0);
-        }
-        BigInteger K = G_b.pow(A).mod(p);
+        System.out.println("Shared G Equal: " + Arrays.equals(g, baTempSS1));
         
         aes();
     }
@@ -210,29 +176,43 @@ public class SimpleAPDU
         byte[] output = new byte[16];
         short len = (short) input.length;
 
-        System.out.print("Input: ");
+        System.out.print("Input (V): ");
         for (byte b: input) System.out.print(String.format("%02X", b));
         System.out.println();
         
-        aesKeyTrial.setKey(baTempSS,(short)0);
+        aesKeyTrial.setKey(g,(short)0);
         Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         aesCipher.init(aesKeyTrial, Cipher.MODE_ENCRYPT);
         aesCipher.doFinal(input, (short)0, len, output, (short)0); 
-        System.out.print("Output: ");
+        System.out.print("Encrypted Input (V): ");
         for (byte b: output) System.out.print(String.format("%02X", b));
         System.out.println();
         
+        byte ss2[] = new byte[CardMngr.HEADER_LENGTH + output.length];
+        ss2[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        ss2[CardMngr.OFFSET_INS] = (byte) 0xD3;
+        ss2[CardMngr.OFFSET_P1] = (byte) 0x00;
+        ss2[CardMngr.OFFSET_P2] = (byte) 0x00;
+        ss2[CardMngr.OFFSET_LC] = (byte) 0x00;
+        System.arraycopy(output, 0, ss2, 5, output.length);
+        byte[] sss2 = cardManager.sendAPDUSimulator(ss2);
+        trace1 = Arrays.copyOfRange(sss2, 0, 17);
+        System.out.println();
+        System.out.print("Received Encrypted Input from Card (V) " + trace1.length + " :");
+        for (byte b: trace1) System.out.print(String.format("%02X", b));
+        System.out.println();
+        
         byte[] input1 = new byte[16];
-        aesKeyTrial.setKey(baTempSS,(short)0);
+        aesKeyTrial.setKey(g,(short)0);
         aesCipher.init(aesKeyTrial, Cipher.MODE_DECRYPT);
-        aesCipher.doFinal(output, (short)0, len, input1, (short)0);
-        System.out.print("Input Once Again: ");
+        aesCipher.doFinal(trace1, (short)0, len, input1, (short)0);
+        System.out.print("Decrypted Input from Card (V): ");
         for (byte b: input1) System.out.print(String.format("%02X", b));
         System.out.println();
     }
     
     // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
-    public static BigInteger OS2IP(byte[]X)
+    public static BigInteger btbi(byte[]X)
     {
         BigInteger out = new BigInteger("0");
         BigInteger twofiftysix = new BigInteger("256");
@@ -246,7 +226,7 @@ public class SimpleAPDU
     }
 
 
-    public static byte[] I2OSP(BigInteger X, int XLen)
+    public static byte[] bitb(BigInteger X, int XLen)
     {
         BigInteger twofiftysix = new BigInteger("256");
 	byte[] out = new byte[XLen];
