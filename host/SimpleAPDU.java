@@ -10,6 +10,9 @@ import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.MessageDigest;
+import java.math.BigInteger;
+
+
 
 public class SimpleAPDU 
 {
@@ -30,12 +33,54 @@ public class SimpleAPDU
     
     private static final byte APPLET_AID[] = {(byte) 0x00, (byte) 0xA4, (byte) 0x04, (byte) 0x00, (byte) 0x06, (byte) 0xC9, (byte) 0xAA, (byte) 0x4E, (byte) 0x15, (byte) 0xB3, (byte) 0xF6, (byte) 0x7F};
     
-    private static void process1()
+    
+    // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
+    public static BigInteger OS2IP(byte[]X){
+		BigInteger out = new BigInteger("0");
+		BigInteger twofiftysix = new BigInteger("256");
+		
+		for(int i = 1; i <= X.length; i++){
+			out = out.add((BigInteger.valueOf(0xFF & X[i - 1])).multiply(twofiftysix.pow(X.length-i)));
+		}
+		//x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
+		
+		return out;
+	}
+
+    
+    public static byte[] I2OSP(BigInteger X, int XLen){
+		BigInteger twofiftysix = new BigInteger("256");
+		byte[] out = new byte[XLen];
+		BigInteger[] cur;
+		
+		if(X.compareTo(twofiftysix.pow(XLen)) >= 0){
+			return new String("integer too large").getBytes();
+		}
+		for(int i = 1; i <= XLen; i++){
+			cur = X.divideAndRemainder(twofiftysix.pow(XLen-i));
+			//X = cur[1];
+			out[i - 1] = cur[0].byteValue();
+		}
+		//basically the inverse of the above
+		//Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
+		
+		return out;
+	}
+    
+    
+    private static void process1() throws Exception
     {
+        
+        
+        
+        
+        
         kpV = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_128);
         kpV.genKeyPair();
         privKeyV = (ECPrivateKey) kpV.getPrivate();
         pubKeyV = (ECPublicKey) kpV.getPublic();
+        
+        
         
         System.out.println("Key Pair Generation (V)");
         lenA = pubKeyV.getA(baTempA,(short) 0); 
@@ -64,6 +109,9 @@ public class SimpleAPDU
         System.out.print("Private Key (V) " + lenS + " :");
         for (byte b: baPrivKeyV) System.out.print(String.format("%02X", b));
         System.out.println();
+        
+        
+        
     }
     
     public static void main(String[] args) throws Exception 
@@ -84,6 +132,9 @@ public class SimpleAPDU
             D23[CardMngr.OFFSET_LC] = (byte) 0x00;
             D23[CardMngr.OFFSET_DATA] = (byte) 0x7F;
             byte[] D23sent = cardManager.sendAPDUSimulator(D23);
+            
+            
+            
 
             System.out.println("********************V parameters (PC Side)********************");
             
@@ -93,7 +144,7 @@ public class SimpleAPDU
             String pin= br.readLine();
             System.out.print("PIN (PC): " + pin);
             System.out.println();
-            if(pin.length() != 4)
+            if(pin.length() != 4 || !pin.matches("[0-9]+"))
             {
                 System.out.println("Invalid PIN");
                 System.exit(0);
@@ -103,6 +154,16 @@ public class SimpleAPDU
             m_hash.doFinal(pin.getBytes(),(short)0,(short)pin.getBytes().length,hashBuffer,(short)0);
             System.out.print("HASH OF PIN: ");
             for (byte b:hashBuffer) System.out.print(String.format("%X",b));
+            System.out.println();
+            
+            BigInteger p = new BigInteger("164987");        // REPLACE WITH CALCULATED P!!! 
+            BigInteger G_number = OS2IP(hashBuffer).mod(p); 
+            
+            byte G_byte[] = I2OSP(G_number,20);
+            
+            System.out.println("Calculated G:");
+            for (byte b:G_byte) System.out.print(String.format("%X",b));
+            
             System.out.println();
             
             process1();
