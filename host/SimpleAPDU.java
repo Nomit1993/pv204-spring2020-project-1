@@ -13,6 +13,7 @@ import javacard.security.KeyPair;
 import javacard.security.MessageDigest;
 import javacardx.crypto.Cipher;
 import java.math.BigInteger; 
+import java.nio.charset.StandardCharsets;
 
 public class SimpleAPDU 
 {
@@ -137,14 +138,10 @@ public class SimpleAPDU
         for (byte b: g) System.out.print(String.format("%02X", b));
         System.out.println();
         
-        BigInteger a = btbi(baPubKeyU);
-        //System.out.println(a.intValue());
-        BigInteger midv = btbi(g).pow(a.intValue()).mod(p);
-        byte[] midV = bitb(midv, 16);
+        String a_str = arrToString(baPubKeyU);      // convert byte array to bigint
+        BigInteger a = new BigInteger(a_str, 16);
+        BigInteger U = g1.pow(a.intValue()).mod(p);
         
-        BigInteger bb = btbi(baTempB);
-        BigInteger k1 = btbi(midV).pow(bb.intValue()).mod(p);
-        byte[] k = bitb(k1, 16);
         
         System.out.print("Shared Secret At PC (V) " + k.length + " :");
         for (byte b: k) System.out.print(String.format("%02X", b));
@@ -246,5 +243,24 @@ public class SimpleAPDU
 	//basically the inverse of the above
 	//Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
         return out;
+    }
+    
+    // [https://www.baeldung.com/java-byte-arrays-hex-strings]
+    public static String arrToString(byte[] byteArray) 
+    {
+        StringBuffer hexStringBuffer = new StringBuffer();
+        for (int i = 0; i < byteArray.length; i++) 
+        {
+        hexStringBuffer.append(byteToHex(byteArray[i]));
+        }
+        return hexStringBuffer.toString();
+    }
+    
+    public static String byteToHex(byte num) 
+    {
+    char[] hexDigits = new char[2];
+    hexDigits[0] = Character.forDigit((num >> 4) & 0xF, 16);
+    hexDigits[1] = Character.forDigit((num & 0xF), 16);
+    return new String(hexDigits);
     }
 }
