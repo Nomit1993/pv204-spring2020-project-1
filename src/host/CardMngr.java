@@ -14,12 +14,11 @@ public class CardMngr {
     CardTerminal m_terminal = null;
     CardChannel m_channel = null;
     Card m_card = null;
-    
+
     // Simulator related attributes
     private static CAD m_cad = null;
     private static JavaxSmartCardInterface m_simulator = null;
 
-    
     private final byte selectCM[] = {
         (byte) 0x00, (byte) 0xa4, (byte) 0x04, (byte) 0x00, (byte) 0x07, (byte) 0xa0, (byte) 0x00, (byte) 0x00,
         (byte) 0x00, (byte) 0x18, (byte) 0x43, (byte) 0x4d};
@@ -55,7 +54,7 @@ public class CardMngr {
                 //reset the card
                 ATR atr = m_card.getATR();
                 System.out.println(bytesToHex(m_card.getATR().getBytes()));
-                
+
                 cardFound = true;
             }
         }
@@ -107,15 +106,15 @@ public class CardMngr {
             apdu[OFFSET_LC] = (byte) 0x00;
 
             ResponseAPDU resp = sendAPDU(apdu);
-            
-            System.out.println("Response: " + Integer.toHexString(resp.getSW()));  
-            
+
+            System.out.println("Response: " + Integer.toHexString(resp.getSW()));
+
             if (resp.getSW() != 0x6D00) { // Note: 0x6D00 is SW_INS_NOT_SUPPORTED
                 // something?
             }
         }
     }
-    
+
     public List GetReaderList() {
         try {
             TerminalFactory factory = TerminalFactory.getDefault();
@@ -177,18 +176,19 @@ public class CardMngr {
         }
         return (buf.toString());
     }
-    
-    
+
+
     public boolean prepareLocalSimulatorApplet(byte[] appletAIDArray, byte[] installData, Class appletClass) {
         System.setProperty("com.licel.jcardsim.terminal.type", "2");
         m_cad = new CAD(System.getProperties());
         m_simulator = (JavaxSmartCardInterface) m_cad.getCardInterface();
         AID appletAID = new AID(appletAIDArray, (short) 0, (byte) appletAIDArray.length);
 
-        AID appletAIDRes =  m_simulator.installApplet(appletAID, appletClass, installData, (short) 0, (byte) installData.length);
+        AID appletAIDRes =  m_simulator.installApplet(appletAID, appletClass, installData,
+                (short) 0, (byte) installData.length);
         return m_simulator.selectApplet(appletAID);
     }
-    
+
     public byte[] sendAPDUSimulator(byte apdu[]) throws Exception {
         System.out.println(">>APDU to Applet>>");
         System.out.println(bytesToHex(apdu));
@@ -200,6 +200,4 @@ public class CardMngr {
 
         return responseBytes;
     }
-    
-    
 }

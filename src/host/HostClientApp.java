@@ -12,12 +12,12 @@ import javacard.security.KeyBuilder;
 import javacard.security.KeyPair;
 import javacard.security.MessageDigest;
 import javacardx.crypto.Cipher;
-import java.math.BigInteger; 
+import java.math.BigInteger;
 
-public class HostClientApp 
+public class HostClientApp
 {
     static CardMngr cardManager = new CardMngr();
-    
+
     //ECDH Parameters
     static byte[] baTempA = new byte[17];
     static byte[] baTempB = new byte[17];
@@ -38,13 +38,13 @@ public class HostClientApp
     static private byte baPubKeyU[] = new byte[17];
     static String pin;
     static byte[] hashBuffer = new byte[20];
-    
+
     private static final byte APPLET_AID[] = {
         (byte)0xEB, (byte)0x2C, (byte)0x23, (byte)0x1C,
         (byte)0xFD, (byte)0x22, (byte)0x1E, (byte)0x00
     };
 
-    public static void main(String[] args) throws Exception 
+    public static void main(String[] args) throws Exception
     {
         // TODO: Pass the PIN here.
         byte[] installData = new byte[10];
@@ -53,54 +53,54 @@ public class HostClientApp
         System.out.println(CardMngr.bytesToHex(APPLET_AID));
 
         ecdh();
-    }    
-    
+    }
+
     public static void ecdh() throws Exception
     {
         System.out.println("********************V parameters (PC Side)********************");
-            
+
         InputStreamReader r = new InputStreamReader(System.in);
         BufferedReader br = new BufferedReader(r);
         System.out.println("Enter PIN (PC): ");
         pin= br.readLine();
         System.out.print("PIN (PC): " + pin);
         System.out.println();
-       
+
         if(pin.length() != 4 || !pin.matches("[0-9]+"))
         {
             System.out.println("Invalid PIN");
             System.exit(0);
         }
-            
+
         MessageDigest m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
         m_hash.doFinal(pin.getBytes(),(short)0,(short)pin.getBytes().length,hashBuffer,(short)0);
         System.out.print("HASH OF PIN: ");
         for (byte b: hashBuffer) System.out.print(String.format("%X",b));
         System.out.println();
-                    
+
         kpV = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_128);
         kpV.genKeyPair();
         privKeyV = (ECPrivateKey) kpV.getPrivate();
         pubKeyV = (ECPublicKey) kpV.getPublic();
-        
+
         System.out.println("Key Pair Generation (V)");
-        lenA = pubKeyV.getA(baTempA,(short) 0); 
-        System.out.print("A (V) " + lenA + " :"); 
-        for (byte b: baTempA) System.out.print(String.format("%02X", b)); 
-            
+        lenA = pubKeyV.getA(baTempA,(short) 0);
+        System.out.print("A (V) " + lenA + " :");
+        for (byte b: baTempA) System.out.print(String.format("%02X", b));
+
         System.out.println();
-        lenB = pubKeyV.getB(baTempB,(short) 0); 
-        System.out.print("B (V) " + lenB + " :"); 
+        lenB = pubKeyV.getB(baTempB,(short) 0);
+        System.out.print("B (V) " + lenB + " :");
         for (byte b: baTempB) System.out.print(String.format("%02X", b));
-        
+
         System.out.println();
-        lenP = pubKeyV.getField(baTempP, (short) 0); 
-        System.out.print("P (V) " + lenP + " :"); 
+        lenP = pubKeyV.getField(baTempP, (short) 0);
+        System.out.print("P (V) " + lenP + " :");
         for (byte b: baTempP) System.out.print(String.format("%02X", b));
-            
+
         System.out.println();
-        lenW = pubKeyV.getW(baTempW,(short) 0); 
-        System.out.print("Public Key (V) " + lenW + " :"); 
+        lenW = pubKeyV.getW(baTempW,(short) 0);
+        System.out.print("Public Key (V) " + lenW + " :");
         for (byte b: baTempW) System.out.print(String.format("%02X", b));
 
         System.out.println();
@@ -108,7 +108,7 @@ public class HostClientApp
         System.out.print("Private Key (V) " + lenS + " :");
         for (byte b: baTempS) System.out.print(String.format("%02X", b));
         System.out.println();
-            
+
         byte pu[] = new byte[CardMngr.HEADER_LENGTH + lenB];
         pu[CardMngr.OFFSET_CLA] = (byte) 0x00;
         pu[CardMngr.OFFSET_INS] = (byte) 0xD1;
@@ -122,38 +122,38 @@ public class HostClientApp
         System.out.print("A Parameter Received from Card (U) " + baPubKeyU.length + " :");
         for (byte b: baPubKeyU) System.out.print(String.format("%02X", b));
         System.out.println();
-        
+
         //if(Arrays.equals(baTempSS, baTempSS1) == true)
-        //start();        
+        //start();
         //G = Hash(PIN) mod P ---- DONE
         //U = (G ^ A) mod P
         //V = (G ^ B) mod P
         //Hash(PIN) = hashBuffer
-        
+
         BigInteger p = btbi(baTempP);
-        
+
         BigInteger g1 = btbi(hashBuffer).mod(p);
         g = bitb(g1, 16);
-        
+
         System.out.print("G (V): ");
         for (byte b: g) System.out.print(String.format("%02X", b));
         System.out.println();
-        
+
         /*BigInteger a1 = btbi(baPubKeyU);
-        Random rand = new Random();
-        int a = rand.nextInt(1);
+          Random rand = new Random();
+          int a = rand.nextInt(1);
         //System.out.println(a.intValue());
         BigInteger midv = btbi(g).pow(a).mod(p);
         byte[] midV = bitb(midv, 16);
-        
+
         BigInteger bb = btbi(baTempB);
         BigInteger k1 = btbi(midV).pow(bb.intValue()).mod(p);
         byte[] k = bitb(k1, 16);
-        
+
         System.out.print("Shared Secret At PC (V) " + k.length + " :");
         for (byte b: k) System.out.print(String.format("%02X", b));
         System.out.println();*/
-                    
+
         byte ss[] = new byte[CardMngr.HEADER_LENGTH + lenW];
         ss[CardMngr.OFFSET_CLA] = (byte) 0x00;
         ss[CardMngr.OFFSET_INS] = (byte) 0xD2;
@@ -167,9 +167,9 @@ public class HostClientApp
         System.out.print("G from Card (U) :");
         for (byte b: baTempSS1) System.out.print(String.format("%02X", b));
         System.out.println();
-        
+
         System.out.println("Shared G Equal: " + Arrays.equals(g, baTempSS1));
-        
+
         aes();
     }
 
@@ -183,15 +183,15 @@ public class HostClientApp
         System.out.print("Input (V): ");
         for (byte b: input) System.out.print(String.format("%02X", b));
         System.out.println();
-        
+
         aesKeyTrial.setKey(g,(short)0);
         Cipher aesCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
         aesCipher.init(aesKeyTrial, Cipher.MODE_ENCRYPT);
-        aesCipher.doFinal(input, (short)0, len, output, (short)0); 
+        aesCipher.doFinal(input, (short)0, len, output, (short)0);
         System.out.print("Encrypted Input (V): ");
         for (byte b: output) System.out.print(String.format("%02X", b));
         System.out.println();
-        
+
         byte ss2[] = new byte[CardMngr.HEADER_LENGTH + output.length];
         ss2[CardMngr.OFFSET_CLA] = (byte) 0x00;
         ss2[CardMngr.OFFSET_INS] = (byte) 0xD3;
@@ -205,7 +205,7 @@ public class HostClientApp
         System.out.print("Received Encrypted Input from Card (V) " + trace1.length + " :");
         for (byte b: trace1) System.out.print(String.format("%02X", b));
         System.out.println();
-        
+
         byte[] input1 = new byte[16];
         aesKeyTrial.setKey(g,(short)0);
         aesCipher.init(aesKeyTrial, Cipher.MODE_DECRYPT);
@@ -214,41 +214,41 @@ public class HostClientApp
         for (byte b: input1) System.out.print(String.format("%02X", b));
         System.out.println();
     }
-    
+
     // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
     public static BigInteger btbi(byte[]X)
     {
         BigInteger out = new BigInteger("0");
         BigInteger twofiftysix = new BigInteger("256");
 
-	for(int i = 1; i <= X.length; i++)
+        for(int i = 1; i <= X.length; i++)
         {
             out = out.add((BigInteger.valueOf(0xFF & X[i - 1])).multiply(twofiftysix.pow(X.length-i)));
-	}
-	//x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
-	return out;
+        }
+        //x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
+        return out;
     }
 
 
     public static byte[] bitb(BigInteger X, int XLen)
     {
         BigInteger twofiftysix = new BigInteger("256");
-	byte[] out = new byte[XLen];
+        byte[] out = new byte[XLen];
         BigInteger[] cur;
 
         if(X.compareTo(twofiftysix.pow(XLen)) >= 0)
         {
-		return new String("integer too large").getBytes();		
+            return new String("integer too large").getBytes();
         }
-	
+
         for(int i = 1; i <= XLen; i++)
         {
             cur = X.divideAndRemainder(twofiftysix.pow(XLen-i));
             //X = cur[1];
             out[i - 1] = cur[0].byteValue();
         }
-	//basically the inverse of the above
-	//Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
+        //basically the inverse of the above
+        //Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
         return out;
     }
 }
