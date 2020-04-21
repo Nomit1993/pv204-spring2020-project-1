@@ -1,6 +1,7 @@
 package applets;
 
 import static applets.SimpleApplet.CLA_SIMPLEAPPLET;
+import java.math.BigInteger;
 import java.util.Arrays;
 import javacard.framework.*;
 import javacard.security.*;
@@ -161,8 +162,58 @@ public class SimpleApplet extends javacard.framework.Applet
         for (byte b: baTempS) System.out.print(String.format("%02X", b));
         System.out.println();
         
+        //if(Arrays.equals(baTempSS, baTempSS1) == true)
+        //start();        
+        //G = Hash(PIN) mod P ---- DONE
+        //U = (G ^ A) mod P
+        //V = (G ^ B) mod P
+        //Hash(PIN) = hashBuffer
+        
+        BigInteger p = new BigInteger(baTempP);
+        BigInteger G_number = OS2IP(hashBuffer).mod(p);
+        byte G_byte[] = I2OSP(G_number, 16);
+        System.out.print("Calculated G (U): ");
+        for(byte b:G_byte) System.out.print(String.format("%X",b));
+        System.out.println();
+        
         Util.arrayCopyNonAtomic(baTempW, (short) 0, apduBuf1, ISO7816.OFFSET_CDATA, lenW);
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, lenW);
+    }
+    
+        // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
+    public static BigInteger OS2IP(byte[]X)
+    {
+        BigInteger out = new BigInteger("0");
+        BigInteger twofiftysix = new BigInteger("256");
+
+	for(int i = 1; i <= X.length; i++)
+        {
+            out = out.add((BigInteger.valueOf(0xFF & X[i - 1])).multiply(twofiftysix.pow(X.length-i)));
+	}
+	//x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
+	return out;
+    }
+
+    public static byte[] I2OSP(BigInteger X, int XLen)
+    {
+        BigInteger twofiftysix = new BigInteger("256");
+	byte[] out = new byte[XLen];
+        BigInteger[] cur;
+
+        if(X.compareTo(twofiftysix.pow(XLen)) >= 0)
+        {
+		return new String("integer too large").getBytes();		
+        }
+	
+        for(int i = 1; i <= XLen; i++)
+        {
+            cur = X.divideAndRemainder(twofiftysix.pow(XLen-i));
+            //X = cur[1];
+            out[i - 1] = cur[0].byteValue();
+        }
+	//basically the inverse of the above
+	//Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
+        return out;
     }
     
     private void process2(APDU apdu)
