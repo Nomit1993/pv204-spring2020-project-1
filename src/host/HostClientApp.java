@@ -1,6 +1,6 @@
-package simpleapdu;
+package host;
 
-import applets.SimpleApplet;
+import applets.PV204Applet;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Arrays;
@@ -14,7 +14,7 @@ import javacard.security.MessageDigest;
 import javacardx.crypto.Cipher;
 import java.math.BigInteger; 
 
-public class SimpleAPDU 
+public class HostClientApp 
 {
     static CardMngr cardManager = new CardMngr();
     
@@ -39,12 +39,16 @@ public class SimpleAPDU
     static String pin;
     static byte[] hashBuffer = new byte[20];
     
-    private static final byte APPLET_AID[] = {(byte) 0x00, (byte) 0xA4, (byte) 0x04, (byte) 0x00, (byte) 0x06, (byte) 0xC9, (byte) 0xAA, (byte) 0x4E, (byte) 0x15, (byte) 0xB3, (byte) 0xF6, (byte) 0x7F};
+    private static final byte APPLET_AID[] = {
+        (byte)0xEB, (byte)0x2C, (byte)0x23, (byte)0x1C,
+        (byte)0xFD, (byte)0x22, (byte)0x1E, (byte)0x00
+    };
 
     public static void main(String[] args) throws Exception 
     {
+        // TODO: Pass the PIN here.
         byte[] installData = new byte[10];
-        cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
+        cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, PV204Applet.class);
 
         System.out.println(CardMngr.bytesToHex(APPLET_AID));
 

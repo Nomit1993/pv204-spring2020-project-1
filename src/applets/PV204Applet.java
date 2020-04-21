@@ -1,15 +1,15 @@
 package applets;
 
-import static applets.SimpleApplet.CLA_SIMPLEAPPLET;
+import static applets.PV204Applet.CLA_SIMPLEAPPLET;
 import java.math.BigInteger;
 import java.util.Arrays;
 import javacard.framework.*;
 import javacard.security.*;
 import javacardx.crypto.Cipher;
-import static simpleapdu.SimpleAPDU.bitb;
-import static simpleapdu.SimpleAPDU.btbi;
+import static host.HostClientApp.bitb;
+import static host.HostClientApp.btbi;
 
-public class SimpleApplet extends javacard.framework.Applet 
+public class PV204Applet extends javacard.framework.Applet 
 {
     /**
      * Hidden constructor for the applet.
@@ -41,7 +41,7 @@ public class SimpleApplet extends javacard.framework.Applet
     byte[] hashBuffer = JCSystem.makeTransientByteArray((short) 20, JCSystem.CLEAR_ON_RESET);
 
     
-    protected SimpleApplet(byte[] buffer, short offset, byte length) {
+    protected PV204Applet(byte[] buffer, short offset, byte length) {
         // TODO: Parse the supplied parameters.
         // TODO: Set up and initialize variables for internal use.
         // Register this applet instance via JavaCard.
@@ -80,7 +80,7 @@ public class SimpleApplet extends javacard.framework.Applet
     {
         // NOTE: Return value is ignored. All the necessary configuration happens in
         // the constructor.
-        new SimpleApplet(parameters, offset, length);
+        new PV204Applet(parameters, offset, length);
     }
 
     /**
