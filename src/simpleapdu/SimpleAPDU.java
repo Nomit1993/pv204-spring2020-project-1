@@ -45,9 +45,7 @@ public class SimpleAPDU
     {
         byte[] installData = new byte[10];
         cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
-            
-        String data = javax.xml.bind.DatatypeConverter.printHexBinary(APPLET_AID);
-        System.out.println(data);
+
         System.out.println(CardMngr.bytesToHex(APPLET_AID));
 
         ecdh();
