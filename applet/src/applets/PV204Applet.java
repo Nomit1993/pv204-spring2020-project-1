@@ -1,6 +1,21 @@
+/*
+ * Copyright 2020 Matěj Grabovský, Nomit Sharma, Milan Šorf
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package applets;
 
-import static applets.SimpleApplet.CLA_SIMPLEAPPLET;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Random;
@@ -10,8 +25,12 @@ import javacardx.crypto.Cipher;
 import static simpleapdu.SimpleAPDU.bigintegertobyte;
 import static simpleapdu.SimpleAPDU.bytetobiginteger;
 
-public class SimpleApplet extends javacard.framework.Applet 
+public class PV204Applet extends javacard.framework.Applet 
 {
+    // The APDU class for our applet.
+    final static byte CLA_PV204APPLET = (byte) 0xC1;
+
+    // Temporary variables, all stored in volatile RAM.
     int trace = 6;
 
     static byte[] pinhash = new byte[20];
@@ -29,33 +48,98 @@ public class SimpleApplet extends javacard.framework.Applet
     byte[] baTempS = new byte[17];
     byte[] k = new byte[17];
 
-    final static byte CLA_SIMPLEAPPLET = (byte) 0x00;
-    
-    protected SimpleApplet(byte[] buffer, short offset, byte length) 
+    // The PIN is stored persistently in EEPROM because we need it to create the group
+    // generator for SPEKE.
+    //MATEJ Kindly check here, i have used just one set pin = 1234
+    //private byte[] pin = null;
+
+    /**
+     * Hidden constructor for the applet.
+     *
+     * The install method should be called instead.
+     *
+     * @param buffer Array of configuration parameters for the applet.
+     * @param offset Starting offset in the parameters array.
+     * @param length Length of data in the parameters array.
+     */
+    protected PV204Applet(byte[] buffer, short offset, byte length) 
     {
+        baTempA = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baTempB = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baTempP = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baTempW = JCSystem.makeTransientByteArray((short) 50, JCSystem.CLEAR_ON_DESELECT);
+        baTempS = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        k = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        pinhash = JCSystem.makeTransientByteArray((short) 32, JCSystem.CLEAR_ON_DESELECT);
+
+        // Store the PIN.
+        //MATEJ Kindly check here
+        //pin = new byte[length];
+        //Util.arrayCopy(buffer, offset, pin, (short)0, length);
+  
+        // Register this applet instance via JavaCard.
         register();
     }
     
-    public boolean select() 
-    {
-        return false;
+    /**
+     * Clear sensitive data from memory.
+     *
+     * Clear session keys, ephemeral keys, etc. that we do not wish others after us
+     * to know.
+     */
+    protected void clearData() {
+        // Overwrite hash buffer with zeros.
+        Util.arrayFillNonAtomic(hashBuffer, (short)0, (short)hashBuffer.length, (byte)0);
+        Util.arrayFillNonAtomic(pin, (short)0, (short)pin.length, (byte)0);
+        // TODO: Clear more sensitive data if necessary.
     }
+
+    /**
+     * Check if applet can be selected for use at the moment.
+     *
+     * Called by the card upon deselecting the applet. This also clear any sensitive
+     * data that might remain the memory.
+     */
+    @Override
+    public void deselect() {
+        clearData();
+    }
+
+    /**
+     * Install the applet with the given parameters.
+     *
+     * @param parameters Array of configuration parameters for the applet.
+     * @param offset Starting offset in the parameters array.
+     * @param length Length of data in the parameters array.
+     */
+    public static void install(byte[] parameters, short offset, byte length)
+            throws ISOException
+    {
+        // NOTE: Return value is ignored. All the necessary configuration happens in
+        // the constructor.
+        new PV204Applet(parameters, offset, length);
+    }
+
+    /**
+     * Process an incoming APDU.
+     *
+     * @param apdu The APDU to be processed.
+     */
+    @Override
+    public void process(APDU apdu) throws ISOException {
         
-    public void deselect() 
-    {
-    }
-
-    public static void install(byte[] parameters, short offset, byte length) throws ISOException
-    {
-        SimpleApplet simpleApplet = new SimpleApplet(parameters, offset, length);
-    }
-
-    public void process(APDU apdu) throws ISOException 
-    {
+        /**
+         * Check if applet can be selected for use at the moment.
+         *
+         * Called by the card to check before selecting the applet. This also clear any
+         * sensitive data that might remain the memory.
+         *
+         * @return true if applet can be selected; false otherwise.
+         */
+         
         byte[] apduBuffer = apdu.getBuffer();
-        if (selectingApplet())  
-            return;
-        if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET) 
+        if (selectingApplet())  return;
+        if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_PV204APPLET) 
         {
             switch (apduBuffer[ISO7816.OFFSET_INS]) 
             {
