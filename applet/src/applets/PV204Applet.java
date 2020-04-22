@@ -26,7 +26,7 @@ import javacardx.crypto.Cipher;
 import static simpleapdu.SimpleAPDU.bigintegertobyte;
 import static simpleapdu.SimpleAPDU.bytetobiginteger;
 
-public class SimpleApplet extends javacard.framework.Applet 
+public class PV204Applet extends javacard.framework.Applet 
 {
     int trace = 6;
 
@@ -45,9 +45,9 @@ public class SimpleApplet extends javacard.framework.Applet
     byte[] baTempS = new byte[17];
     byte[] k = new byte[17];
 
-    final static byte CLA_SIMPLEAPPLET = (byte) 0x00;
+    final static byte CLA_PV204APPLET  = (byte) 0xC1;
     
-    protected SimpleApplet(byte[] buffer, short offset, byte length) 
+    protected PV204Applet(byte[] buffer, short offset, byte length) 
     {
         register();
     }
@@ -63,7 +63,7 @@ public class SimpleApplet extends javacard.framework.Applet
 
     public static void install(byte[] parameters, short offset, byte length) throws ISOException
     {
-        SimpleApplet simpleApplet = new SimpleApplet(parameters, offset, length);
+        PV204Applet simpleApplet = new PV204Applet(parameters, offset, length);
     }
 
     public void process(APDU apdu) throws ISOException 
