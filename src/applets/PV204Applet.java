@@ -47,6 +47,10 @@ public class PV204Applet extends javacard.framework.Applet
     private KeyAgreement ecdhU;
     private final MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
 
+    // The PIN is stored persistently in EEPROM because we need it to create the group
+    // generator for SPEKE.
+    private byte[] pin = null;
+
     /**
      * Hidden constructor for the applet.
      *
@@ -71,7 +75,9 @@ public class PV204Applet extends javacard.framework.Applet
 
         hashBuffer = JCSystem.makeTransientByteArray((short) 20, JCSystem.CLEAR_ON_DESELECT);
 
-        // TODO: Set the PIN.
+        // Store the PIN.
+        pin = new byte[length];
+        Util.arrayCopy(buffer, offset, pin, (short)0, length);
 
         // Register this applet instance via JavaCard.
         register();
@@ -86,6 +92,7 @@ public class PV204Applet extends javacard.framework.Applet
     protected void clearData() {
         // Overwrite hash buffer with zeros.
         Util.arrayFillNonAtomic(hashBuffer, (short)0, (short)hashBuffer.length, (byte)0);
+        Util.arrayFillNonAtomic(pin, (short)0, (short)pin.length, (byte)0);
         // TODO: Clear more sensitive data if necessary.
     }
 

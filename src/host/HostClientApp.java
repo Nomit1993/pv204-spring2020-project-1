@@ -61,11 +61,23 @@ public class HostClientApp
 
     public static void main(String[] args) throws Exception
     {
-        // TODO: Pass the PIN here.
-        byte[] installData = new byte[10];
-        cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, PV204Applet.class);
-
+        System.out.print("Applet ID (AID): ");
         System.out.println(CardMngr.bytesToHex(APPLET_AID));
+
+        // Here, we set up (install) the applet inside the simulator.
+        // Ask the user/vendor to configure the PIN for this specific card.
+        System.out.print("Set up PIN for card: ");
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+        pin = br.readLine();
+
+        if(!pin.matches("^[0-9]{4}$"))
+        {
+            System.out.println("Invalid PIN. Exactly four digits required.");
+            System.exit(1);
+        }
+
+        // Install and start up the applet with the specified PIN.
+        cardManager.prepareLocalSimulatorApplet(APPLET_AID, pin.getBytes(), PV204Applet.class);
 
         ecdh();
     }
@@ -76,15 +88,15 @@ public class HostClientApp
 
         InputStreamReader r = new InputStreamReader(System.in);
         BufferedReader br = new BufferedReader(r);
-        System.out.println("Enter PIN (PC): ");
-        pin= br.readLine();
+        System.out.print("Enter PIN (PC): ");
+        pin = br.readLine();
         System.out.print("PIN (PC): " + pin);
         System.out.println();
 
-        if(pin.length() != 4 || !pin.matches("[0-9]+"))
+        if(!pin.matches("^[0-9]{4}$"))
         {
-            System.out.println("Invalid PIN");
-            System.exit(0);
+            System.out.println("Invalid PIN. Exactly four digits required.");
+            System.exit(1);
         }
 
         MessageDigest m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
