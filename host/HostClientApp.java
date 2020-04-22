@@ -30,7 +30,6 @@ import javacard.security.MessageDigest;
 import javacardx.crypto.Cipher;
 import java.math.BigInteger;
 import java.util.Random;
-import host.CardMngr;
 
 public class SimpleAPDU 
 {
