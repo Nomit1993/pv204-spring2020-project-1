@@ -31,7 +31,7 @@ import javacardx.crypto.Cipher;
 import java.math.BigInteger;
 import java.util.Random;
 
-public class SimpleAPDU 
+public class HostClientApp 
 {
     static CardMngr cardManager = new CardMngr();
     
