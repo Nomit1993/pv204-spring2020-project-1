@@ -15,7 +15,6 @@
  */
 package applets;
 
-import static applets.PV204Applet.CLA_SIMPLEAPPLET;
 import java.math.BigInteger;
 import java.util.Arrays;
 import javacard.framework.*;
@@ -26,39 +25,54 @@ import static host.HostClientApp.btbi;
 
 public class PV204Applet extends javacard.framework.Applet
 {
+    // The APDU class for our applet.
+    final static byte CLA_PV204APPLET = (byte) 0xC1;
+
+    // Temporary variables, all stored in volatile RAM.
+    private byte[] baTempA = null;
+    private byte[] baTempB = null;
+    private byte[] baTempP = null;
+    private byte[] baTempW = null;
+    private byte[] baTempS = null;
+    private byte[] baTempSS = null;
+    private byte[] g = null;
+    private byte baPrivKeyU[] = null;
+    private byte baPubKeyU[] = null;
+    private byte baPubKeyV[] = null;
+    private byte[] hashBuffer = null;
+
+    private KeyPair kpU;
+    private ECPrivateKey privKeyU;
+    private ECPublicKey pubKeyU;
+    private KeyAgreement ecdhU;
+    private final MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
+
     /**
      * Hidden constructor for the applet.
      *
      * The install method should be called instead.
      *
-     * @param parameters Array of configuration parameters for the applet.
+     * @param buffer Array of configuration parameters for the applet.
      * @param offset Starting offset in the parameters array.
      * @param length Length of data in the parameters array.
      */
-    byte[] baTemp = new byte[255];
-    byte[] baTempA = new byte[17];
-    byte[] baTempB = new byte[17];
-    byte[] baTempP = new byte[17];
-    byte[] baTempW = new byte[33];
-    byte[] baTempS = new byte[17];
-    byte[] baTempSS = new byte[17];
-    byte[] g = new byte[17];
-    short lenA, lenB, lenP, lenW, lenS, lenSS;
-    KeyPair kpU;
-    ECPrivateKey privKeyU;
-    ECPublicKey pubKeyU;
-    KeyAgreement ecdhU;
-    private final MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
-    final static byte CLA_SIMPLEAPPLET = (byte) 0x00;
-    private byte baPrivKeyU[] = new byte[17];
-    private byte baPubKeyU[] = new byte[17];
-    private byte baPubKeyV[] = new byte[17];
-    byte[] hashBuffer = JCSystem.makeTransientByteArray((short) 20, JCSystem.CLEAR_ON_RESET);
-
-
     protected PV204Applet(byte[] buffer, short offset, byte length) {
-        // TODO: Parse the supplied parameters.
-        // TODO: Set up and initialize variables for internal use.
+        baTempA = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baTempB = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baTempP = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baTempW = JCSystem.makeTransientByteArray((short) 33, JCSystem.CLEAR_ON_DESELECT);
+        baTempS = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baTempSS = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        g = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+
+        baPrivKeyU = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baPubKeyU = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baPubKeyV = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+
+        hashBuffer = JCSystem.makeTransientByteArray((short) 20, JCSystem.CLEAR_ON_DESELECT);
+
+        // TODO: Set the PIN.
+
         // Register this applet instance via JavaCard.
         register();
     }
@@ -70,7 +84,9 @@ public class PV204Applet extends javacard.framework.Applet
      * to know.
      */
     protected void clearData() {
-        // TODO: Clear sensitive data. Overwrite with zeros or random bytes.
+        // Overwrite hash buffer with zeros.
+        Util.arrayFillNonAtomic(hashBuffer, (short)0, (short)hashBuffer.length, (byte)0);
+        // TODO: Clear more sensitive data if necessary.
     }
 
     /**
@@ -115,7 +131,7 @@ public class PV204Applet extends javacard.framework.Applet
          */
         byte[] apduBuffer = apdu.getBuffer();
         if (selectingApplet())  return;
-        if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET)
+        if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_PV204APPLET)
         {
             switch (apduBuffer[ISO7816.OFFSET_INS])
             {
@@ -155,27 +171,27 @@ public class PV204Applet extends javacard.framework.Applet
         pubKeyU = (ECPublicKey) kpU.getPublic();
 
         System.out.println("Key Pair Generation (U)");
-        lenA = pubKeyU.getA(baTempA,(short) 0);
+        short lenA = pubKeyU.getA(baTempA,(short) 0);
         System.out.print("A (U) " + lenA + " :");
         for (byte b: baTempA) System.out.print(String.format("%02X", b));
 
         System.out.println();
-        lenB = pubKeyU.getB(baTempB,(short) 0);
+        short lenB = pubKeyU.getB(baTempB,(short) 0);
         System.out.print("B (U) " + lenB + " :");
         for (byte b: baTempB) System.out.print(String.format("%02X", b));
 
         System.out.println();
-        lenP = pubKeyU.getField(baTempP, (short) 0);
+        short lenP = pubKeyU.getField(baTempP, (short) 0);
         System.out.print("P (U) " + lenP + " :");
         for (byte b: baTempP) System.out.print(String.format("%02X", b));
 
         System.out.println();
-        lenW = pubKeyU.getW(baTempW,(short) 0);
+        short lenW = pubKeyU.getW(baTempW,(short) 0);
         System.out.print("Public Key (U) " + lenW + " :");
         for (byte b: baTempW) System.out.print(String.format("%02X", b));
 
         System.out.println();
-        lenS = privKeyU.getS(baTempS,(short) 0);
+        short lenS = privKeyU.getS(baTempS,(short) 0);
         System.out.print("Private Key (U) " + lenS + " :");
         for (byte b: baTempS) System.out.print(String.format("%02X", b));
         System.out.println();
