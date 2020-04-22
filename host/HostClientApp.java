@@ -104,7 +104,7 @@ public class HostClientApp
         System.out.print("Sending Parameter B (to CARD)");
         System.out.println();System.out.println("********************Trace [1]********************");
         byte sentB[] = new byte[CardMngr.HEADER_LENGTH + lenB];
-        sentB[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        sentB[CardMngr.OFFSET_CLA] = (byte) 0xC1;
         sentB[CardMngr.OFFSET_INS] = (byte) 0xD1;
         sentB[CardMngr.OFFSET_P1] = (byte) 0x00;
         sentB[CardMngr.OFFSET_P2] = (byte) 0x00;
@@ -134,7 +134,7 @@ public class HostClientApp
        System.out.println();System.out.println("********************Trace [3] ********************");
         
         byte receiveKCard[] = new byte[CardMngr.HEADER_LENGTH];
-        receiveKCard[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        receiveKCard[CardMngr.OFFSET_CLA] = (byte) 0xC1;
         receiveKCard[CardMngr.OFFSET_INS] = (byte) 0xD2;
         receiveKCard[CardMngr.OFFSET_P1] = (byte) 0x00;
         receiveKCard[CardMngr.OFFSET_P2] = (byte) 0x00;
@@ -178,7 +178,7 @@ public class HostClientApp
             System.out.println();System.out.println("********************Trace [" + trace + "]********************");
             
             byte sentencinput[] = new byte[CardMngr.HEADER_LENGTH + encinput.length];
-            sentencinput[CardMngr.OFFSET_CLA] = (byte) 0x00;
+            sentencinput[CardMngr.OFFSET_CLA] = (byte) 0xC1;
             sentencinput[CardMngr.OFFSET_INS] = (byte) 0xD3;
             sentencinput[CardMngr.OFFSET_P1] = (byte) 0x00;
             sentencinput[CardMngr.OFFSET_P2] = (byte) 0x00;
