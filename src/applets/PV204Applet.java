@@ -15,16 +15,25 @@
  */
 package applets;
 
+import host.CardMngr;
 import java.math.BigInteger;
 import java.util.Arrays;
 import javacard.framework.*;
-import javacard.security.*;
+import javacard.security.AESKey;
+import javacard.security.ECPrivateKey;
+import javacard.security.ECPublicKey;
+import javacard.security.KeyAgreement;
+import javacard.security.KeyBuilder;
+import javacard.security.KeyPair;
+import javacard.security.MessageDigest;
 import javacardx.crypto.Cipher;
 
 public class PV204Applet extends javacard.framework.Applet
 {
     // The APDU class for our applet.
     final static byte CLA_PV204APPLET = (byte) 0xC1;
+    // Block size of the symmetric cipher (AES-128) = 128 bits = 16 bytes.
+    final static short BLOCK_SIZE = 16;
     // Size of integers in the EC prime field in bytes.
     final static short FIELD_SIZE = 25;
     // Digest size of the hash function = 256 bits.
@@ -37,7 +46,7 @@ public class PV204Applet extends javacard.framework.Applet
     // Public keys have been exchanged and a session key has been established.
     final private static byte SESSION_KEY_ESTABLISHED = 0x01;
     // Knowledge of key (PIN) has been confirmed.
-    final private static byte KEY_CONFIRMED = 0x02;
+    final private static byte PIN_CONFIRMED = 0x02;
 
     // Temporary variables, all stored in volatile RAM.
     private byte[] baTempW = null;
@@ -48,11 +57,13 @@ public class PV204Applet extends javacard.framework.Applet
     private byte baPubKeyV[] = null;
     private byte sessionKey[] = null;
     private short lenSessionKey = 0;
+    private byte tmpBlock[] = null;
 
     private KeyPair kpU;
     private ECPrivateKey privKeyU;
     private ECPublicKey pubKeyU;
     private KeyAgreement ecdhU;
+    private Cipher aesEnc, aesDec;
 
     private byte currentState = READY;
 
@@ -78,6 +89,11 @@ public class PV204Applet extends javacard.framework.Applet
         baPubKeyU = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
         baPubKeyV = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
         sessionKey = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
+        tmpBlock = JCSystem.makeTransientByteArray((short) BLOCK_SIZE, JCSystem.CLEAR_ON_DESELECT);
+
+        ecdhU = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        aesEnc = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+        aesDec = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
 
         // Store only the hash of the PIN.
         pinHash = new byte[HASH_SIZE];
@@ -104,6 +120,7 @@ public class PV204Applet extends javacard.framework.Applet
         Util.arrayFillNonAtomic(baPubKeyU, (short)0, (short)baPubKeyU.length, (byte)0);
         Util.arrayFillNonAtomic(baPubKeyV, (short)0, (short)baPubKeyV.length, (byte)0);
         Util.arrayFillNonAtomic(sessionKey, (short)0, (short)sessionKey.length, (byte)0);
+        Util.arrayFillNonAtomic(tmpBlock, (short)0, (short)tmpBlock.length, (byte)0);
     }
 
     /**
@@ -159,12 +176,12 @@ public class PV204Applet extends javacard.framework.Applet
             case (byte) 0xD2:
                 if (currentState != SESSION_KEY_ESTABLISHED)
                     ISOException.throwIt(ISO7816.SW_COMMAND_NOT_ALLOWED);
-                process2(apdu);
+                confirmPIN(apdu);
                 break;
             case (byte) 0xD3:
-                if (currentState != KEY_CONFIRMED)
+                if (currentState != PIN_CONFIRMED)
                     ISOException.throwIt(ISO7816.SW_COMMAND_NOT_ALLOWED);
-                process3(apdu);
+                doCommunications(apdu);
                 break;
             default:
                 ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -200,24 +217,60 @@ public class PV204Applet extends javacard.framework.Applet
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, lenW);
 
         // Establish session key via ECDH.
-        KeyAgreement ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-        ecdh.init(privKeyU);
-        lenSessionKey = ecdh.generateSecret(hostW, (short)0, length,
+        ecdhU.init(privKeyU);
+        lenSessionKey = ecdhU.generateSecret(hostW, (short)0, length,
                 sessionKey, (short)0);
+
+        // Initialize the AES cipher with the established session key.
+        AESKey aesKey = (AESKey)KeyBuilder.buildKey(KeyBuilder.TYPE_AES,
+                KeyBuilder.LENGTH_AES_128, false);
+        aesKey.setKey(sessionKey, (short)0);
+
+        aesEnc.init(aesKey, Cipher.MODE_ENCRYPT);
+        aesDec.init(aesKey, Cipher.MODE_DECRYPT);
 
         currentState = SESSION_KEY_ESTABLISHED;
     }
 
-    private void process2(APDU apdu)
+    private void confirmPIN(APDU apdu)
     {
-        byte[] apduBuf = apdu.getBuffer();
-        Util.arrayCopyNonAtomic(g, (short) 0, apduBuf, ISO7816.OFFSET_CDATA, (short)g.length);
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)g.length);
+        byte[] buffer = apdu.getBuffer();
+        short length = apdu.setIncomingAndReceive();
+
+        // Validate buffer length. It must be exactly the size of an AES-128 block.
+        if (length != BLOCK_SIZE) {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
+
+        // Retrieve the encrypted block.
+        Util.arrayCopyNonAtomic(buffer, ISO7816.OFFSET_CDATA, tmpBlock, (short)0, length);
+
+        byte[] payload = new byte[BLOCK_SIZE];
+        aesDec.doFinal(tmpBlock, (short)0, length, payload, (short)0);
+
+        MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+        byte[] tmpBuf = new byte[HASH_SIZE];
+        hash.doFinal(pinHash, (short)0, HASH_SIZE, tmpBuf, (short)0);
+
+        System.out.println(String.format("tmpBuf: %s\npayload: %s",
+                CardMngr.bytesToHex(tmpBuf), CardMngr.bytesToHex(payload)));
+        if (Arrays.equals(tmpBuf, payload)) {
+            System.out.println("Card side OK");
+        } else {
+            System.out.println("Card side BAD");
+        }
+
+        // TODO: Receive H(H(PIN)) and check that it's correct.
+        // TODO: Send H(PIN).
+        //Util.arrayCopyNonAtomic(g, (short) 0, apduBuf, ISO7816.OFFSET_CDATA, (short)g.length);
+        //apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)g.length);
+
+        currentState = PIN_CONFIRMED;
     }
 
-    private void process3(APDU apdu)
+    private void doCommunications(APDU apdu)
     {
-        byte[] apduBuf = apdu.getBuffer();
+       /* byte[] apduBuf = apdu.getBuffer();
 
         byte[] input = Arrays.copyOfRange(apduBuf, 5, 21);
         short len = (short)input.length;
@@ -249,6 +302,7 @@ public class PV204Applet extends javacard.framework.Applet
 
         Util.arrayCopyNonAtomic(output1, (short) 0, apduBuf, ISO7816.OFFSET_CDATA, (short)output1.length);
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)output1.length);
+        */
     }
 
     /**
