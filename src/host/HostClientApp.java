@@ -20,6 +20,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Arrays;
 import javacard.security.AESKey;
+import javacard.security.CryptoException;
 import javacard.security.ECPrivateKey;
 import javacard.security.ECPublicKey;
 import javacard.security.KeyAgreement;
@@ -31,28 +32,24 @@ import java.math.BigInteger;
 
 public class HostClientApp
 {
+    final static short FIELD_SIZE = KeyBuilder.LENGTH_EC_FP_192;
+    final static short HASH_SIZE = 32;
+
     static CardMngr cardManager = new CardMngr();
 
     //ECDH Parameters
-    static byte[] baTempA = new byte[25];
-    static byte[] baTempB = new byte[25];
-    static byte[] baTempP = new byte[25];
-    static byte[] baTempW = new byte[50];
-    static byte[] baTempS = new byte[25];
-    static byte[] baTempSS = new byte[25];
-    static byte[] baTempSS1 = new byte[25];
-    static byte[] g = new byte[25];
-    static byte[] trace1 = new byte[25];
-    static short lenA, lenB, lenP, lenW, lenS, lenSS;
+    static byte[] g = new byte[FIELD_SIZE];
+    static byte[] trace1 = new byte[FIELD_SIZE];
     static KeyPair kpV;
     static ECPrivateKey privKeyV;
     static ECPublicKey pubKeyV;
     static KeyAgreement ecdhV;
-    private static byte baPrivKeyV[] = new byte[25];
-    private static byte baPubKeyV[] = new byte[25];
-    static private byte baPubKeyU[] = new byte[25];
-    static String pin;
-    static byte[] hashBuffer = new byte[32];
+    private static byte baPrivKeyV[] = new byte[FIELD_SIZE];
+    private static byte baPubKeyV[] = new byte[FIELD_SIZE];
+    private static byte baPubKeyU[] = new byte[FIELD_SIZE];
+    private static byte[] pinHash = new byte[HASH_SIZE];
+    private static byte[] sessionKey = new byte[FIELD_SIZE];
+    private static short lenSessionKey = 0;
 
     private static final byte APPLET_AID[] = {
         (byte)0xEB, (byte)0x2C, (byte)0x23, (byte)0x1C,
@@ -61,17 +58,16 @@ public class HostClientApp
 
     public static void main(String[] args) throws Exception
     {
-        System.out.print("Applet ID (AID): ");
-        System.out.println(CardMngr.bytesToHex(APPLET_AID));
+        System.out.println(String.format("Applet ID (AID): %s", CardMngr.bytesToHex(APPLET_AID)));
 
         // Here, we set up (install) the applet inside the simulator.
         // Ask the user/vendor to configure the PIN for this specific card.
         System.out.print("Set up PIN for card: ");
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        pin = br.readLine();
+        String pin = br.readLine();
 
-        if(!pin.matches("^[0-9]{4}$"))
-        {
+        // Validate PIN format.
+        if(!pin.matches("^[0-9]{4}$")) {
             System.out.println("Invalid PIN. Exactly four digits required.");
             System.exit(1);
         }
@@ -79,128 +75,80 @@ public class HostClientApp
         // Install and start up the applet with the specified PIN.
         cardManager.prepareLocalSimulatorApplet(APPLET_AID, pin.getBytes(), PV204Applet.class);
 
-        ecdh();
+        System.out.println("*** Host application ***");
+
+        // Ask the user for PIN and store its hash.
+        askForPIN();
+        // Start the protocol now.
+        establishSessionKey();
+        //aes();
     }
 
-    public static void ecdh() throws Exception
+    /**
+     * Ask the user for the applet's PIN.
+     * @throws Exception
+     */
+    private static void askForPIN() throws Exception
     {
-        System.out.println("********************V parameters (PC Side)********************");
-
-        InputStreamReader r = new InputStreamReader(System.in);
-        BufferedReader br = new BufferedReader(r);
+        // Ask the user to enter the preconfigured PIN.
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         System.out.print("Enter PIN (PC): ");
-        pin = br.readLine();
-        System.out.print("PIN (PC): " + pin);
-        System.out.println();
+        String pin = br.readLine();
 
+        // Validate PIN format.
         if(!pin.matches("^[0-9]{4}$"))
         {
             System.out.println("Invalid PIN. Exactly four digits required.");
             System.exit(1);
         }
 
-        MessageDigest m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
-        m_hash.doFinal(pin.getBytes(),(short)0,(short)pin.getBytes().length,hashBuffer,(short)0);
-        System.out.print("HASH OF PIN: ");
-        for (byte b: hashBuffer) System.out.print(String.format("%X",b));
-        System.out.println();
-
-        kpV = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_192);
-        kpV.genKeyPair();
-        privKeyV = (ECPrivateKey) kpV.getPrivate();
-        pubKeyV = (ECPublicKey) kpV.getPublic();
-
-        System.out.println("Key Pair Generation (V)");
-        lenA = pubKeyV.getA(baTempA,(short) 0);
-        System.out.print("A (V) " + lenA + " :");
-        for (byte b: baTempA) System.out.print(String.format("%02X", b));
-
-        System.out.println();
-        lenB = pubKeyV.getB(baTempB,(short) 0);
-        System.out.print("B (V) " + lenB + " :");
-        for (byte b: baTempB) System.out.print(String.format("%02X", b));
-
-        System.out.println();
-        lenP = pubKeyV.getField(baTempP, (short) 0);
-        System.out.print("P (V) " + lenP + " :");
-        for (byte b: baTempP) System.out.print(String.format("%02X", b));
-
-        System.out.println();
-        lenW = pubKeyV.getW(baTempW,(short) 0);
-        System.out.print("Public Key (V) " + lenW + " :");
-        for (byte b: baTempW) System.out.print(String.format("%02X", b));
-
-        System.out.println();
-        lenS = privKeyV.getS(baTempS,(short) 0);
-        System.out.print("Private Key (V) " + lenS + " :");
-        for (byte b: baTempS) System.out.print(String.format("%02X", b));
-        System.out.println();
-
-        byte pu[] = new byte[CardMngr.HEADER_LENGTH + lenB];
-        pu[CardMngr.OFFSET_CLA] = (byte) 0xC1;
-        pu[CardMngr.OFFSET_INS] = (byte) 0xD1;
-        pu[CardMngr.OFFSET_P1] = (byte) 0x00;
-        pu[CardMngr.OFFSET_P2] = (byte) 0x00;
-        pu[CardMngr.OFFSET_LC] = (byte) 0x00;
-        System.arraycopy(baTempB, 0, pu, 5, lenB);
-        byte[] pus = cardManager.sendAPDUSimulator(pu);
-        baPubKeyU = Arrays.copyOfRange(pus, 0, 17);
-        System.out.println();
-        System.out.print("A Parameter Received from Card (U) " + baPubKeyU.length + " :");
-        for (byte b: baPubKeyU) System.out.print(String.format("%02X", b));
-        System.out.println();
-
-        //if(Arrays.equals(baTempSS, baTempSS1) == true)
-        //start();
-        //G = Hash(PIN) mod P ---- DONE
-        //U = (G ^ A) mod P
-        //V = (G ^ B) mod P
-        //Hash(PIN) = hashBuffer
-
-        BigInteger p = btbi(baTempP);
-
-        BigInteger g1 = btbi(hashBuffer).mod(p);
-        g = bitb(g1, 16);
-
-        System.out.print("G (V): ");
-        for (byte b: g) System.out.print(String.format("%02X", b));
-        System.out.println();
-
-        /*BigInteger a1 = btbi(baPubKeyU);
-          Random rand = new Random();
-          int a = rand.nextInt(1);
-        //System.out.println(a.intValue());
-        BigInteger midv = btbi(g).pow(a).mod(p);
-        byte[] midV = bitb(midv, 16);
-
-        BigInteger bb = btbi(baTempB);
-        BigInteger k1 = btbi(midV).pow(bb.intValue()).mod(p);
-        byte[] k = bitb(k1, 16);
-
-        System.out.print("Shared Secret At PC (V) " + k.length + " :");
-        for (byte b: k) System.out.print(String.format("%02X", b));
-        System.out.println();*/
-
-        byte ss[] = new byte[CardMngr.HEADER_LENGTH + lenW];
-        ss[CardMngr.OFFSET_CLA] = (byte) 0xC1;
-        ss[CardMngr.OFFSET_INS] = (byte) 0xD2;
-        ss[CardMngr.OFFSET_P1] = (byte) 0x00;
-        ss[CardMngr.OFFSET_P2] = (byte) 0x00;
-        ss[CardMngr.OFFSET_LC] = (byte) 0x00;
-        System.arraycopy(baTempB, 0, ss, 5, lenB);
-        byte[] sss = cardManager.sendAPDUSimulator(ss);
-        baTempSS1 = Arrays.copyOfRange(sss, 0, 16);
-        System.out.println();
-        System.out.print("G from Card (U) :");
-        for (byte b: baTempSS1) System.out.print(String.format("%02X", b));
-        System.out.println();
-
-        System.out.println("Shared G Equal: " + Arrays.equals(g, baTempSS1));
-
-        aes();
+        // Compute and store the hash of the PIN.
+        MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+        hash.doFinal(pin.getBytes(), (short)0, (short)pin.getBytes().length, pinHash, (short)0);
     }
 
-    public static void aes() throws Exception
+    /**
+     * First phase of the protocol -- establish a common session key between the host and
+     * the applet.
+     * @throws Exception
+     */
+    private static void establishSessionKey() throws Exception
+    {
+        // Generate a 192-bit EC key pair.
+        KeyPair pair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_192);
+        pair.genKeyPair();
+        ECPrivateKey ecPrivate = (ECPrivateKey)pair.getPrivate();
+        ECPublicKey ecPublic = (ECPublicKey)pair.getPublic();
+
+        byte[] pub_w = new byte[2*FIELD_SIZE];
+
+        short lenW = ecPublic.getW(pub_w, (short)0);
+
+        byte apdu[];
+
+        // First message in the sequence:
+        // Host --> Applet: public key W
+        apdu = new byte[CardMngr.HEADER_LENGTH + lenW];
+        apdu[CardMngr.OFFSET_CLA] = (byte)0xC1;
+        apdu[CardMngr.OFFSET_INS] = (byte)0xD1;
+        apdu[CardMngr.OFFSET_P1] = (byte)0x00;
+        apdu[CardMngr.OFFSET_P2] = (byte)0x00;
+        apdu[CardMngr.OFFSET_LC] = (byte)lenW;
+        System.arraycopy(pub_w, 0, apdu, CardMngr.HEADER_LENGTH, lenW);
+
+        // Send the message, receive and parse response.
+        byte[] response = cardManager.sendAPDUSimulator(apdu);
+        short lenAppletPublic = (short)(response.length - 2); // Cut off the 0x9000 OK response.
+        // TODO: Check that the public key is valid and has the correct size.
+        byte[] appletPublic = Arrays.copyOfRange(response, 0, lenAppletPublic);
+
+        KeyAgreement ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        ecdh.init(ecPrivate);
+        lenSessionKey = ecdh.generateSecret(appletPublic, (short)0, lenAppletPublic,
+                sessionKey, (short)0);
+    }
+
+    private static void aes() throws Exception
     {
         AESKey aesKeyTrial= (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
         byte[] input = {(byte)0x44,(byte)0x22,(byte)0x33,(byte)0x44,(byte)0x55,(byte)0x66,(byte)0x77,(byte)0x88,(byte)0x99,0x10,(byte)0xA2, 0x35, (byte)0x5E,0x15,0x16,0x14};
@@ -225,9 +173,9 @@ public class HostClientApp
         ss2[CardMngr.OFFSET_P1] = (byte) 0x00;
         ss2[CardMngr.OFFSET_P2] = (byte) 0x00;
         ss2[CardMngr.OFFSET_LC] = (byte) 0x00;
-        System.arraycopy(output, 0, ss2, 5, output.length);
+        System.arraycopy(output, 0, ss2, CardMngr.HEADER_LENGTH, output.length);
         byte[] sss2 = cardManager.sendAPDUSimulator(ss2);
-        trace1 = Arrays.copyOfRange(sss2, 0, 17);
+        trace1 = Arrays.copyOfRange(sss2, 0, FIELD_SIZE);
         System.out.println();
         System.out.print("Received Encrypted Input from Card (V) " + trace1.length + " :");
         for (byte b: trace1) System.out.print(String.format("%02X", b));
@@ -240,42 +188,5 @@ public class HostClientApp
         System.out.print("Decrypted Input from Card (V): ");
         for (byte b: input1) System.out.print(String.format("%02X", b));
         System.out.println();
-    }
-
-    // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
-    public static BigInteger btbi(byte[]X)
-    {
-        BigInteger out = new BigInteger("0");
-        BigInteger twofiftysix = new BigInteger("256");
-
-        for(int i = 1; i <= X.length; i++)
-        {
-            out = out.add((BigInteger.valueOf(0xFF & X[i - 1])).multiply(twofiftysix.pow(X.length-i)));
-        }
-        //x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
-        return out;
-    }
-
-
-    public static byte[] bitb(BigInteger X, int XLen)
-    {
-        BigInteger twofiftysix = new BigInteger("256");
-        byte[] out = new byte[XLen];
-        BigInteger[] cur;
-
-        if(X.compareTo(twofiftysix.pow(XLen)) >= 0)
-        {
-            return new String("integer too large").getBytes();
-        }
-
-        for(int i = 1; i <= XLen; i++)
-        {
-            cur = X.divideAndRemainder(twofiftysix.pow(XLen-i));
-            //X = cur[1];
-            out[i - 1] = cur[0].byteValue();
-        }
-        //basically the inverse of the above
-        //Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
-        return out;
     }
 }

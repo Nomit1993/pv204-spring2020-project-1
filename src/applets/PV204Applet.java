@@ -20,36 +20,45 @@ import java.util.Arrays;
 import javacard.framework.*;
 import javacard.security.*;
 import javacardx.crypto.Cipher;
-import static host.HostClientApp.bitb;
-import static host.HostClientApp.btbi;
 
 public class PV204Applet extends javacard.framework.Applet
 {
     // The APDU class for our applet.
     final static byte CLA_PV204APPLET = (byte) 0xC1;
+    // Size of integers in the EC prime field in bytes.
+    final static short FIELD_SIZE = 25;
+    // Digest size of the hash function = 256 bits.
+    final static short HASH_SIZE = 32;
+    // Length of the PIN in bytes.
+    final static short PIN_LENGTH = 4;
+
+    // Clean-slate state before any information is exchanged.
+    final private static byte READY = 0x00;
+    // Public keys have been exchanged and a session key has been established.
+    final private static byte SESSION_KEY_ESTABLISHED = 0x01;
+    // Knowledge of key (PIN) has been confirmed.
+    final private static byte KEY_CONFIRMED = 0x02;
 
     // Temporary variables, all stored in volatile RAM.
-    private byte[] baTempA = null;
-    private byte[] baTempB = null;
-    private byte[] baTempP = null;
     private byte[] baTempW = null;
-    private byte[] baTempS = null;
-    private byte[] baTempSS = null;
+    private byte[] hostW = null;
     private byte[] g = null;
     private byte baPrivKeyU[] = null;
     private byte baPubKeyU[] = null;
     private byte baPubKeyV[] = null;
-    private byte[] hashBuffer = null;
+    private byte sessionKey[] = null;
+    private short lenSessionKey = 0;
 
     private KeyPair kpU;
     private ECPrivateKey privKeyU;
     private ECPublicKey pubKeyU;
     private KeyAgreement ecdhU;
-    private final MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+
+    private byte currentState = READY;
 
     // The PIN is stored persistently in EEPROM because we need it to create the group
     // generator for SPEKE.
-    private byte[] pin = null;
+    private byte[] pinHash = null;
 
     /**
      * Hidden constructor for the applet.
@@ -61,23 +70,19 @@ public class PV204Applet extends javacard.framework.Applet
      * @param length Length of data in the parameters array.
      */
     protected PV204Applet(byte[] buffer, short offset, byte length) {
-        baTempA = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
-        baTempB = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
-        baTempP = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
         baTempW = JCSystem.makeTransientByteArray((short) 50, JCSystem.CLEAR_ON_DESELECT);
-        baTempS = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
-        baTempSS = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
-        g = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        hostW = JCSystem.makeTransientByteArray((short) 50, JCSystem.CLEAR_ON_DESELECT);
+        g = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
 
-        baPrivKeyU = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
-        baPubKeyU = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
-        baPubKeyV = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baPrivKeyU = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
+        baPubKeyU = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
+        baPubKeyV = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
+        sessionKey = JCSystem.makeTransientByteArray((short) FIELD_SIZE, JCSystem.CLEAR_ON_DESELECT);
 
-        hashBuffer = JCSystem.makeTransientByteArray((short) 32, JCSystem.CLEAR_ON_DESELECT);
-
-        // Store the PIN.
-        pin = new byte[length];
-        Util.arrayCopy(buffer, offset, pin, (short)0, length);
+        // Store only the hash of the PIN.
+        pinHash = new byte[HASH_SIZE];
+        MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+        hash.doFinal(buffer, offset, PIN_LENGTH, pinHash, (short)0);
 
         // Register this applet instance via JavaCard.
         register();
@@ -91,16 +96,21 @@ public class PV204Applet extends javacard.framework.Applet
      */
     protected void clearData() {
         // Overwrite hash buffer with zeros.
-        Util.arrayFillNonAtomic(hashBuffer, (short)0, (short)hashBuffer.length, (byte)0);
-        Util.arrayFillNonAtomic(pin, (short)0, (short)pin.length, (byte)0);
-        // TODO: Clear more sensitive data if necessary.
+        Util.arrayFillNonAtomic(baTempW, (short)0, (short)baTempW.length, (byte)0);
+        Util.arrayFillNonAtomic(hostW, (short)0, (short)hostW.length, (byte)0);
+        Util.arrayFillNonAtomic(g, (short)0, (short)g.length, (byte)0);
+
+        Util.arrayFillNonAtomic(baPrivKeyU, (short)0, (short)baPrivKeyU.length, (byte)0);
+        Util.arrayFillNonAtomic(baPubKeyU, (short)0, (short)baPubKeyU.length, (byte)0);
+        Util.arrayFillNonAtomic(baPubKeyV, (short)0, (short)baPubKeyV.length, (byte)0);
+        Util.arrayFillNonAtomic(sessionKey, (short)0, (short)sessionKey.length, (byte)0);
     }
 
     /**
      * Check if applet can be selected for use at the moment.
      *
      * Called by the card upon deselecting the applet. This also clear any sensitive
-     * data that might remain the memory.
+     * data that might remain in the memory.
      */
     @Override
     public void deselect() {
@@ -129,111 +139,73 @@ public class PV204Applet extends javacard.framework.Applet
      */
     @Override
     public void process(APDU apdu) throws ISOException {
+        if (selectingApplet())
+            return;
 
-        /**
-         * Check if applet can be selected for use at the moment.
-         *
-         * Called by the card to check before selecting the applet. This also clear any
-         * sensitive data that might remain the memory.
-         *
-         * @return true if applet can be selected; false otherwise.
-         */
-        byte[] apduBuffer = apdu.getBuffer();
-        if (selectingApplet())  return;
-        if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_PV204APPLET)
-        {
-            switch (apduBuffer[ISO7816.OFFSET_INS])
-            {
-                case (byte) 0xD1: process1(apdu); return;
-                case (byte) 0xD2: process2(apdu); return;
-                case (byte) 0xD3: process3(apdu); return;
-                default:    ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED); break;
-            }
-        }
-        else
+        byte[] buffer = apdu.getBuffer();
+
+        if (buffer[ISO7816.OFFSET_CLA] != CLA_PV204APPLET)
             ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
+
+        switch (buffer[ISO7816.OFFSET_INS])
+        {
+            // TODO: Check that we're in the correct state.
+            // Otherwise throw SW_COMMAND_NOT_ALLOWED
+            case (byte) 0xD1:
+                if (currentState != READY)
+                    ISOException.throwIt(ISO7816.SW_COMMAND_NOT_ALLOWED);
+                establishSessionKey(apdu);
+                break;
+            case (byte) 0xD2:
+                if (currentState != SESSION_KEY_ESTABLISHED)
+                    ISOException.throwIt(ISO7816.SW_COMMAND_NOT_ALLOWED);
+                process2(apdu);
+                break;
+            case (byte) 0xD3:
+                if (currentState != KEY_CONFIRMED)
+                    ISOException.throwIt(ISO7816.SW_COMMAND_NOT_ALLOWED);
+                process3(apdu);
+                break;
+            default:
+                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
+        }
     }
 
-    private void process1(APDU apdu)
+    /**
+     * Receive EC public key from the host and send our own.
+     * @param apdu The incoming APDU.
+     */
+    private void establishSessionKey(APDU apdu)
     {
-        byte[] apduBuf = apdu.getBuffer();
+        byte[] buffer = apdu.getBuffer();
+        short length = apdu.setIncomingAndReceive();
 
-        System.out.println("********************U parameters (Card Side)********************");
+        // Validate buffer length. It must be exactly the size of a point on the elliptic curve.
+        if (length < 49 || length > 50) {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
 
-        hash.doFinal(pin,(short)0,(short)pin.length,hashBuffer,(short)0);
-        System.out.print("HASH OF PIN: ");
-        for (byte b:hashBuffer) System.out.print(String.format("%X",b));
-        System.out.println();
+        // Store the host public key.
+        Util.arrayCopyNonAtomic(buffer, ISO7816.OFFSET_CDATA, hostW, (short)0, length);
 
+        // Generate a fresh key pair for ECDH.
         kpU = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_192);
         kpU.genKeyPair();
-        privKeyU = (ECPrivateKey) kpU.getPrivate();
-        pubKeyU = (ECPublicKey) kpU.getPublic();
+        privKeyU = (ECPrivateKey)kpU.getPrivate();
+        pubKeyU = (ECPublicKey)kpU.getPublic();
 
-        System.out.println("Key Pair Generation (U)");
-        short lenA = pubKeyU.getA(baTempA,(short) 0);
-        System.out.print("A (U) " + lenA + " :");
-        for (byte b: baTempA) System.out.print(String.format("%02X", b));
+        // Copy our public key into the APDU buffer and send it back.
+        short lenW = pubKeyU.getW(baTempW, (short)0);
+        Util.arrayCopyNonAtomic(baTempW, (short)0, buffer, ISO7816.OFFSET_CDATA, lenW);
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, lenW);
 
-        System.out.println();
-        short lenB = pubKeyU.getB(baTempB,(short) 0);
-        System.out.print("B (U) " + lenB + " :");
-        for (byte b: baTempB) System.out.print(String.format("%02X", b));
+        // Establish session key via ECDH.
+        KeyAgreement ecdh = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        ecdh.init(privKeyU);
+        lenSessionKey = ecdh.generateSecret(hostW, (short)0, length,
+                sessionKey, (short)0);
 
-        System.out.println();
-        short lenP = pubKeyU.getField(baTempP, (short) 0);
-        System.out.print("P (U) " + lenP + " :");
-        for (byte b: baTempP) System.out.print(String.format("%02X", b));
-
-        System.out.println();
-        short lenW = pubKeyU.getW(baTempW,(short) 0);
-        System.out.print("Public Key (U) " + lenW + " :");
-        for (byte b: baTempW) System.out.print(String.format("%02X", b));
-
-        System.out.println();
-        short lenS = privKeyU.getS(baTempS,(short) 0);
-        System.out.print("Private Key (U) " + lenS + " :");
-        for (byte b: baTempS) System.out.print(String.format("%02X", b));
-        System.out.println();
-
-        baPubKeyV = Arrays.copyOfRange(apduBuf, 5, lenB + 5);
-        System.out.print("B Parameter Received from Host (V) " +lenB + " :");
-        for (byte b: baPubKeyV) System.out.print(String.format("%02X", b));
-        System.out.println();
-
-        //if(Arrays.equals(baTempSS, baTempSS1) == true)
-        //start();
-        //G = Hash(PIN) mod P ---- DONE
-        //U = (G ^ A) mod P
-        //V = (G ^ B) mod P
-        //Hash(PIN) = hashBuffer
-
-        BigInteger p = btbi(baTempP);
-
-        BigInteger g1 = btbi(hashBuffer).mod(p);
-        g = bitb(g1, 16);
-
-        System.out.print("G (U): ");
-        for (byte b: g) System.out.print(String.format("%02X", b));
-        System.out.println();
-
-        /*BigInteger a1 = btbi(baPubKeyV);
-          Random rand = new Random();
-          int a = rand.nextInt(1);
-        //System.out.println(a.intValue());
-        BigInteger midu = btbi(g).pow(a).mod(p);
-        byte[] midU = bitb(midu, 16);
-
-        BigInteger bb = btbi(baTempA);
-        BigInteger k1 = btbi(midU).pow(bb.intValue()).mod(p);
-        byte[] k = bitb(k1, 16);
-
-        System.out.print("Shared Secret At Card (U) " + k.length + " :");
-        for (byte b: k) System.out.print(String.format("%02X", b));
-        System.out.println();*/
-
-        Util.arrayCopyNonAtomic(baTempA, (short) 0, apduBuf, ISO7816.OFFSET_CDATA, (short)lenA);
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)lenA);
+        currentState = SESSION_KEY_ESTABLISHED;
     }
 
     private void process2(APDU apdu)
@@ -292,42 +264,5 @@ public class PV204Applet extends javacard.framework.Applet
         clearData();
 
         return true;
-    }
-
-    // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
-    public static BigInteger OS2IP(byte[]X)
-    {
-        BigInteger out = new BigInteger("0");
-        BigInteger twofiftysix = new BigInteger("256");
-
-        for(int i = 1; i <= X.length; i++)
-        {
-            out = out.add((BigInteger.valueOf(0xFF & X[i - 1])).multiply(twofiftysix.pow(X.length-i)));
-        }
-        //x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
-        return out;
-    }
-
-    public static byte[] I2OSP(BigInteger X, int XLen)
-    {
-        BigInteger twofiftysix = new BigInteger("256");
-        byte[] out = new byte[XLen];
-        BigInteger[] cur;
-
-        if(X.compareTo(twofiftysix.pow(XLen)) >= 0)
-        {
-            // TODO: Throw an exception instead.
-            return new String("integer too large").getBytes();
-        }
-
-        for(int i = 1; i <= XLen; i++)
-        {
-            cur = X.divideAndRemainder(twofiftysix.pow(XLen-i));
-            //X = cur[1];
-            out[i - 1] = cur[0].byteValue();
-        }
-        //basically the inverse of the above
-        //Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
-        return out;
     }
 }

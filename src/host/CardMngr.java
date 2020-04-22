@@ -178,16 +178,14 @@ public class CardMngr {
     public static char toHexChar(int i) {
         if ((0 <= i) && (i <= 9)) {
             return (char) ('0' + i);
-        } else {
-            return (char) ('a' + (i - 10));
         }
+        return (char) ('A' + (i - 10));
     }
 
     public static String bytesToHex(byte[] data) {
         StringBuilder buf = new StringBuilder();
-        for (int i = 0; i < data.length; i++) {
-            buf.append(byteToHex(data[i]));
-            buf.append(" ");
+        for (byte b : data) {
+            buf.append(byteToHex(b));
         }
         return (buf.toString());
     }
