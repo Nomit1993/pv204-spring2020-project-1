@@ -102,6 +102,7 @@ public class PV204Applet extends javacard.framework.Applet
      * Called by the card upon deselecting the applet. This also clear any sensitive
      * data that might remain the memory.
      */
+    @Override
     public void deselect() {
         clearData();
     }
@@ -115,17 +116,18 @@ public class PV204Applet extends javacard.framework.Applet
      */
     public static void install(byte[] parameters, short offset, byte length)
             throws ISOException
-        {
-            // NOTE: Return value is ignored. All the necessary configuration happens in
-            // the constructor.
-            new PV204Applet(parameters, offset, length);
-        }
+    {
+        // NOTE: Return value is ignored. All the necessary configuration happens in
+        // the constructor.
+        new PV204Applet(parameters, offset, length);
+    }
 
     /**
      * Process an incoming APDU.
      *
      * @param apdu The APDU to be processed.
      */
+    @Override
     public void process(APDU apdu) throws ISOException {
 
         /**
@@ -152,27 +154,18 @@ public class PV204Applet extends javacard.framework.Applet
             ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
     }
 
-    public boolean select() {
-        clearData();
-
-        return true;
-    }
-
     private void process1(APDU apdu)
     {
         byte[] apduBuf = apdu.getBuffer();
 
         System.out.println("********************U parameters (Card Side)********************");
 
-        byte pin[] = {0x31,0x32,0x33,0x34};
-        System.out.print("PIN Set on Card: 1234");
-        System.out.println();
         hash.doFinal(pin,(short)0,(short)pin.length,hashBuffer,(short)0);
         System.out.print("HASH OF PIN: ");
         for (byte b:hashBuffer) System.out.print(String.format("%X",b));
         System.out.println();
 
-        kpU = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_128);
+        kpU = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_128);
         kpU.genKeyPair();
         privKeyU = (ECPrivateKey) kpU.getPrivate();
         pubKeyU = (ECPublicKey) kpU.getPublic();
@@ -250,42 +243,6 @@ public class PV204Applet extends javacard.framework.Applet
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)g.length);
     }
 
-    // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
-    public static BigInteger OS2IP(byte[]X)
-    {
-        BigInteger out = new BigInteger("0");
-        BigInteger twofiftysix = new BigInteger("256");
-
-        for(int i = 1; i <= X.length; i++)
-        {
-            out = out.add((BigInteger.valueOf(0xFF & X[i - 1])).multiply(twofiftysix.pow(X.length-i)));
-        }
-        //x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
-        return out;
-    }
-
-    public static byte[] I2OSP(BigInteger X, int XLen)
-    {
-        BigInteger twofiftysix = new BigInteger("256");
-        byte[] out = new byte[XLen];
-        BigInteger[] cur;
-
-        if(X.compareTo(twofiftysix.pow(XLen)) >= 0)
-        {
-            return new String("integer too large").getBytes();
-        }
-
-        for(int i = 1; i <= XLen; i++)
-        {
-            cur = X.divideAndRemainder(twofiftysix.pow(XLen-i));
-            //X = cur[1];
-            out[i - 1] = cur[0].byteValue();
-        }
-        //basically the inverse of the above
-        //Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
-        return out;
-    }
-
     private void process3(APDU apdu)
     {
         byte[] apduBuf = apdu.getBuffer();
@@ -320,5 +277,57 @@ public class PV204Applet extends javacard.framework.Applet
 
         Util.arrayCopyNonAtomic(output1, (short) 0, apduBuf, ISO7816.OFFSET_CDATA, (short)output1.length);
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short)output1.length);
+    }
+
+    /**
+     * Check if applet can be selected for use at the moment.
+     *
+     * Called by the card to check before selecting the applet. This also clear any
+     * sensitive data that might remain the memory.
+     *
+     * @return true if applet can be selected; false otherwise.
+     */
+    @Override
+    public boolean select() {
+        clearData();
+
+        return true;
+    }
+
+    // helper functions for SPEKE calculations [IEE163] [https://github.com/chetan51/ABBC/blob/master/src/main/java/RSAEngine/Crypter.java]
+    public static BigInteger OS2IP(byte[]X)
+    {
+        BigInteger out = new BigInteger("0");
+        BigInteger twofiftysix = new BigInteger("256");
+
+        for(int i = 1; i <= X.length; i++)
+        {
+            out = out.add((BigInteger.valueOf(0xFF & X[i - 1])).multiply(twofiftysix.pow(X.length-i)));
+        }
+        //x = x(xLen–1)^256xLen–1 + x(xLen–2)^256xLen–2 + … + x(1)^256 + x0
+        return out;
+    }
+
+    public static byte[] I2OSP(BigInteger X, int XLen)
+    {
+        BigInteger twofiftysix = new BigInteger("256");
+        byte[] out = new byte[XLen];
+        BigInteger[] cur;
+
+        if(X.compareTo(twofiftysix.pow(XLen)) >= 0)
+        {
+            // TODO: Throw an exception instead.
+            return new String("integer too large").getBytes();
+        }
+
+        for(int i = 1; i <= XLen; i++)
+        {
+            cur = X.divideAndRemainder(twofiftysix.pow(XLen-i));
+            //X = cur[1];
+            out[i - 1] = cur[0].byteValue();
+        }
+        //basically the inverse of the above
+        //Cur is an array of two bigints, with cur[0]=X/256^(XLen-i) and cur[1]=X/256^[XLen-i]
+        return out;
     }
 }
