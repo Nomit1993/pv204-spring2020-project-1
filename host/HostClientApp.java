@@ -1,6 +1,22 @@
-package simpleapdu;
+/*
+ * Copyright 2020 Matěj Grabovský, Nomit Sharma, Milan Šorf
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-import applets.SimpleApplet;
+package host;
+
+import applets.PV204Applet;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -20,6 +36,7 @@ public class SimpleAPDU
     static CardMngr cardManager = new CardMngr();
     
     static String pin;
+    static String pinset;
     static byte[] pinhash = new byte[20];
     
     static KeyPair kpV;
@@ -28,23 +45,26 @@ public class SimpleAPDU
 
     static short lenA, lenB, lenP, lenPubK, lenPvtK, lenSS;
 
-    static byte[] baTempA = new byte[17];
-    static byte[] baTempB = new byte[17];
-    static byte[] baTempP = new byte[17];
-    static byte[] baTempW = new byte[33];
-    static byte[] baTempS = new byte[17];
-    static byte[] receivedACard = new byte[17];
-    static byte[] k = new byte[17];
+    static byte[] baTempA = new byte[25];
+    static byte[] baTempB = new byte[25];
+    static byte[] baTempP = new byte[25];
+    static byte[] baTempW = new byte[50];
+    static byte[] baTempS = new byte[25];
+    static byte[] receivedACard = new byte[25];
+    static byte[] k = new byte[25];
     
-    static byte APPLET_AID[] = {(byte) 0x00, (byte) 0xA4, (byte) 0x04, (byte) 0x00, (byte) 0x06, (byte) 0xC9, (byte) 0xAA, (byte) 0x4E, (byte) 0x15, (byte) 0xB3, (byte) 0xF6, (byte) 0x7F};
-
+    private static final byte APPLET_AID[] = {
+        (byte)0xEB, (byte)0x2C, (byte)0x23, (byte)0x1C,
+        (byte)0xFD, (byte)0x22, (byte)0x1E, (byte)0x00
+    };
+	
     public static void main(String[] args) throws Exception 
     {
         byte[] installData = new byte[10];
         cardManager.prepareLocalSimulatorApplet(APPLET_AID, installData, SimpleApplet.class);
             
         String data = javax.xml.bind.DatatypeConverter.printHexBinary(APPLET_AID);
-        System.out.println(data);
+        System.out.print("Applet ID (AID): ");
         System.out.println(CardMngr.bytesToHex(APPLET_AID));
         System.out.println();
 
@@ -53,26 +73,41 @@ public class SimpleAPDU
     
     public static void pin() throws IOException, Exception
     {
-        InputStreamReader r = new InputStreamReader(System.in);
-        BufferedReader br = new BufferedReader(r);
-        System.out.print("Enter PIN (HOST): ");
-        pin= br.readLine();
+	// Here, we set up (install) the applet inside the simulator.
+        // Ask the user/vendor to configure the PIN for this specific card.
+ 	int attempts = 0;
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         
-        if(pin.length() != 4 || !pin.matches("[0-9]+"))
+        while(attempts != 4)
         {
-            System.out.println("Invalid PIN");
-            System.exit(0);
-        }
+            System.out.print("Setting PIN (for CARD): ");
+            pinset = br.readLine();
+
+            if(!pin.matches("^[0-9]{4}$"))
+            {
+                System.out.println("Invalid PIN. Exactly Four Digits Required.");
+                attempts++;
+            }
             
-        MessageDigest phash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
-        phash.doFinal(pin.getBytes(), (short)0, (short)pin.getBytes().length, pinhash,(short)0);
-        System.out.print("Hash Of PIN (HOST): ");
-        for (byte b: pinhash) System.out.print(String.format("%X",b));
-        System.out.println();
+            else
+            {
+                attempts = 4;
+		System.out.println("PIN (HOST): " + pin);
+                MessageDigest phash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
+                phash.doFinal(pin.getBytes(), (short)0, (short)pin.getBytes().length, pinhash,(short)0);
+                System.out.print("Hash Of PIN (HOST): ");
+                for (byte b: pinhash) System.out.print(String.format("%X",b));
+                System.out.println();
         
-        ecdhchannel();
+		// Install and start up the applet with the specified PIN.
+		// MATEJ Kindly check here
+        	//cardManager.prepareLocalSimulatorApplet(APPLET_AID, pin.getBytes(), PV204Applet.class);
+		    
+		ecdhchannel();
+            }
+        }
     }
-    
+     
     public static void ecdhchannel() throws Exception
     {
         kpV = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_128);
@@ -89,7 +124,7 @@ public class SimpleAPDU
         System.out.print("Sending Parameter B (to CARD)");
         System.out.println();System.out.println("********************Trace [1]********************");
         byte sentB[] = new byte[CardMngr.HEADER_LENGTH + lenB];
-        sentB[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        sentB[CardMngr.OFFSET_CLA] = (byte) 0xC1;
         sentB[CardMngr.OFFSET_INS] = (byte) 0xD1;
         sentB[CardMngr.OFFSET_P1] = (byte) 0x00;
         sentB[CardMngr.OFFSET_P2] = (byte) 0x00;
@@ -119,7 +154,7 @@ public class SimpleAPDU
        System.out.println();System.out.println("********************Trace [3] ********************");
         
         byte receiveKCard[] = new byte[CardMngr.HEADER_LENGTH];
-        receiveKCard[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        receiveKCard[CardMngr.OFFSET_CLA] = (byte) 0xC1;
         receiveKCard[CardMngr.OFFSET_INS] = (byte) 0xD2;
         receiveKCard[CardMngr.OFFSET_P1] = (byte) 0x00;
         receiveKCard[CardMngr.OFFSET_P2] = (byte) 0x00;
