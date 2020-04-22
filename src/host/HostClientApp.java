@@ -34,25 +34,25 @@ public class HostClientApp
     static CardMngr cardManager = new CardMngr();
 
     //ECDH Parameters
-    static byte[] baTempA = new byte[17];
-    static byte[] baTempB = new byte[17];
-    static byte[] baTempP = new byte[17];
-    static byte[] baTempW = new byte[33];
-    static byte[] baTempS = new byte[17];
-    static byte[] baTempSS = new byte[17];
-    static byte[] baTempSS1 = new byte[17];
-    static byte[] g = new byte[17];
-    static byte[] trace1 = new byte[17];
+    static byte[] baTempA = new byte[25];
+    static byte[] baTempB = new byte[25];
+    static byte[] baTempP = new byte[25];
+    static byte[] baTempW = new byte[50];
+    static byte[] baTempS = new byte[25];
+    static byte[] baTempSS = new byte[25];
+    static byte[] baTempSS1 = new byte[25];
+    static byte[] g = new byte[25];
+    static byte[] trace1 = new byte[25];
     static short lenA, lenB, lenP, lenW, lenS, lenSS;
     static KeyPair kpV;
     static ECPrivateKey privKeyV;
     static ECPublicKey pubKeyV;
     static KeyAgreement ecdhV;
-    private static byte baPrivKeyV[] = new byte[17];
-    private static byte baPubKeyV[] = new byte[17];
-    static private byte baPubKeyU[] = new byte[17];
+    private static byte baPrivKeyV[] = new byte[25];
+    private static byte baPubKeyV[] = new byte[25];
+    static private byte baPubKeyU[] = new byte[25];
     static String pin;
-    static byte[] hashBuffer = new byte[20];
+    static byte[] hashBuffer = new byte[32];
 
     private static final byte APPLET_AID[] = {
         (byte)0xEB, (byte)0x2C, (byte)0x23, (byte)0x1C,
@@ -99,13 +99,13 @@ public class HostClientApp
             System.exit(1);
         }
 
-        MessageDigest m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
+        MessageDigest m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
         m_hash.doFinal(pin.getBytes(),(short)0,(short)pin.getBytes().length,hashBuffer,(short)0);
         System.out.print("HASH OF PIN: ");
         for (byte b: hashBuffer) System.out.print(String.format("%X",b));
         System.out.println();
 
-        kpV = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_128);
+        kpV = new KeyPair(KeyPair.ALG_EC_FP,KeyBuilder.LENGTH_EC_FP_192);
         kpV.genKeyPair();
         privKeyV = (ECPrivateKey) kpV.getPrivate();
         pubKeyV = (ECPublicKey) kpV.getPublic();
@@ -137,7 +137,7 @@ public class HostClientApp
         System.out.println();
 
         byte pu[] = new byte[CardMngr.HEADER_LENGTH + lenB];
-        pu[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        pu[CardMngr.OFFSET_CLA] = (byte) 0xC1;
         pu[CardMngr.OFFSET_INS] = (byte) 0xD1;
         pu[CardMngr.OFFSET_P1] = (byte) 0x00;
         pu[CardMngr.OFFSET_P2] = (byte) 0x00;
@@ -182,7 +182,7 @@ public class HostClientApp
         System.out.println();*/
 
         byte ss[] = new byte[CardMngr.HEADER_LENGTH + lenW];
-        ss[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        ss[CardMngr.OFFSET_CLA] = (byte) 0xC1;
         ss[CardMngr.OFFSET_INS] = (byte) 0xD2;
         ss[CardMngr.OFFSET_P1] = (byte) 0x00;
         ss[CardMngr.OFFSET_P2] = (byte) 0x00;
@@ -220,7 +220,7 @@ public class HostClientApp
         System.out.println();
 
         byte ss2[] = new byte[CardMngr.HEADER_LENGTH + output.length];
-        ss2[CardMngr.OFFSET_CLA] = (byte) 0x00;
+        ss2[CardMngr.OFFSET_CLA] = (byte) 0xC1;
         ss2[CardMngr.OFFSET_INS] = (byte) 0xD3;
         ss2[CardMngr.OFFSET_P1] = (byte) 0x00;
         ss2[CardMngr.OFFSET_P2] = (byte) 0x00;

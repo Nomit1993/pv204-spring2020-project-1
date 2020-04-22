@@ -45,7 +45,7 @@ public class PV204Applet extends javacard.framework.Applet
     private ECPrivateKey privKeyU;
     private ECPublicKey pubKeyU;
     private KeyAgreement ecdhU;
-    private final MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA,false);
+    private final MessageDigest hash = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
 
     // The PIN is stored persistently in EEPROM because we need it to create the group
     // generator for SPEKE.
@@ -61,19 +61,19 @@ public class PV204Applet extends javacard.framework.Applet
      * @param length Length of data in the parameters array.
      */
     protected PV204Applet(byte[] buffer, short offset, byte length) {
-        baTempA = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
-        baTempB = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
-        baTempP = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
-        baTempW = JCSystem.makeTransientByteArray((short) 33, JCSystem.CLEAR_ON_DESELECT);
-        baTempS = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
-        baTempSS = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
-        g = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baTempA = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baTempB = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baTempP = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baTempW = JCSystem.makeTransientByteArray((short) 50, JCSystem.CLEAR_ON_DESELECT);
+        baTempS = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baTempSS = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        g = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
 
-        baPrivKeyU = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
-        baPubKeyU = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
-        baPubKeyV = JCSystem.makeTransientByteArray((short) 17, JCSystem.CLEAR_ON_DESELECT);
+        baPrivKeyU = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baPubKeyU = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
+        baPubKeyV = JCSystem.makeTransientByteArray((short) 25, JCSystem.CLEAR_ON_DESELECT);
 
-        hashBuffer = JCSystem.makeTransientByteArray((short) 20, JCSystem.CLEAR_ON_DESELECT);
+        hashBuffer = JCSystem.makeTransientByteArray((short) 32, JCSystem.CLEAR_ON_DESELECT);
 
         // Store the PIN.
         pin = new byte[length];
@@ -165,7 +165,7 @@ public class PV204Applet extends javacard.framework.Applet
         for (byte b:hashBuffer) System.out.print(String.format("%X",b));
         System.out.println();
 
-        kpU = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_128);
+        kpU = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_192);
         kpU.genKeyPair();
         privKeyU = (ECPrivateKey) kpU.getPrivate();
         pubKeyU = (ECPublicKey) kpU.getPublic();
